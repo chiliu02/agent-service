@@ -1,0 +1,61 @@
+# PLATFORM-LEVEL. Anything anchored to a directory that belongs to ONE
+# implementation lives in that implementation's own .gitignore instead --
+# `workspace/*` written here would not match `impl/claude-python/workspace/*`
+# anyway, because a pattern containing a slash is anchored to the file it is
+# written in. See impl/claude-python/.gitignore.
+
+# Python-generated files
+__pycache__/
+*.py[oc]
+.pytest_cache/
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Secrets — never commit.
+# NOTE: the negation below must keep its ".example" suffix. A bare "!.env"
+# un-ignores the real secrets file.
+# Unanchored, so it covers every level: the real `.env` now sits in
+# impl/claude-python/ beside the compose files that read it.
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# conversations
+docs/conversations/
+
+# Scratch space -- every temporary/throwaway directory belongs under here.
+# NOTE: "temp/*" not "temp/" -- git never descends into a directory excluded by
+# the directory form to evaluate a negation, so "!temp/.gitkeep" below would
+# silently never take effect (confirmed with `git check-ignore -v` during Task
+# 11 verification).
+# This one is the PLATFORM's: `ci.py` writes its generated env files and mount
+# directories to temp/ci/. The implementation has its own.
+temp/*
+!temp/.gitkeep
+
+# Second and third implementations, same rule as the first.
+impl/*/\.venv
+
+# IDE: `.idea/` IS TRACKED, ON PURPOSE (user, 2026-08-17), so there is
+# deliberately no pattern for it here. The nine files under it -- the module
+# list, one .iml per build, and vcs.xml -- describe the project a fresh clone
+# opens with, which makes them the repository's rather than any one developer's.
+#
+# A commented-out `#.idea/` sat here and read as an intention nobody had. The
+# note beside it was correct and is kept, because it is the reason uncommenting
+# would not have worked on its own: A PATTERN DOES NOTHING TO A FILE GIT ALREADY
+# TRACKS. Ignoring these would take a `git rm --cached -r .idea` as well, which
+# removes them from every other clone -- a decision, not a tidy-up.
+
+# Developer-local MCP servers -- see the note on the current branch.
+.mcp.json
+
+# The outbox: correspondence with the consumer. Not published; it carries a
+# third party's internal infrastructure.
+docs/to-agent-harness/

@@ -1,0 +1,40 @@
+# The acceptance suite, and its OWN project.
+#
+# WHY IT IS SEPARATE FROM EVERY IMPLEMENTATION. This suite is the contract's,
+# not the Python service's: it drives a running service over HTTP and reads
+# published JSON, and nothing in it imports `agent_service` (measured -- zero
+# occurrences). Giving it its own `pyproject.toml` is what makes that true
+# rather than merely observed. `uv run pytest` here needs pytest and httpx and
+# gets a service at `AGENT_SERVICE_TEST_BASE_URL` -- which may be a container
+# built from any language. Plan 8 step 7 is when the second one appears; this
+# file is what it will be run against, unchanged.
+#
+# NOT A PACKAGE. There is nothing to build and nothing to install, so this
+# declares no build backend: `uv run` reads the dependency group and the pytest
+# configuration, and stops there.
+[project]
+name = "agent-service-conformance"
+version = "0"
+description = "The acceptance suite for the agent-service HTTP specification"
+requires-python = ">=3.13"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["."]
+# `-m 'not live'` for the same reason the implementation sets it: the paid tier
+# is opt-in and stays a command you type. Nothing that runs this file by default
+# can spend money.
+addopts = "-m 'not live' -q"
+markers = [
+    "live: hits the real Anthropic API and costs money (deselected by default)",
+    "conformance: drives a running service over HTTP; needs AGENT_SERVICE_TEST_BASE_URL",
+    "slow: takes seconds per session (fills the cap); free, but not quick",
+]

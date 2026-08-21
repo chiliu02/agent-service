@@ -1,0 +1,222 @@
+[project]
+# THE PLATFORM is agent-service; THIS is one implementation of it. The name
+# was plain `agent-service` while there was only one build, which stopped
+# being true when impl/ gained codex-python and gemini-python. The tail
+# equals `IMPLEMENTATION_NAME` and the directory, and the family matches
+# `agent-service-conformance` beside it.
+#
+# THE IMPORT PACKAGE IS STILL `agent_service`, deliberately. The three
+# builds are never installed together -- separate containers, separate
+# venvs -- so nothing collides, and renaming it would churn every import to
+# say what the directory already says.
+name = "agent-service-claude-python"
+# Keep in step with the `version=` passed to FastAPI in api.py's create_app(),
+# which is what /openapi.json advertises to clients. 0.2.0 == Plan 2, sessions.
+# 0.3.0 == the credential contract, max_sessions and the boot gates on
+# /v1/capabilities, plus the x-sdk-session-id response header on the turn
+# endpoints. Additive and non-breaking, but a caller that provisions containers
+# needs a way to ask "is this an image that publishes what it requires?" without
+# probing for a field.
+# 0.4.0 == caller-supplied `session_id` on POST /v1/sessions (returned as
+# `sdk_session_id` on the record), and cost fields reporting `null` instead of
+# `0` for a successful turn the SDK attributed nothing to.
+#
+# 0.5.0 == that request field renamed to `sdk_session_id` (the old spelling
+# still accepted, deprecated), plus `python -m agent_service.spec`. THE BUMP
+# IS THE POINT: 0.4.0 was already handed to a consumer, and changing the surface
+# under a version somebody has pinned is what left them reading an `0.2.0` spec
+# that no longer described anything -- the version stood still across two
+# feature rounds. It does not do that again.
+#
+# 0.5.1 == description-only, and it still moves the number: probe T2 measured
+# that creation does NOT consume a supplied session id, so the guidance shipped
+# in 0.5.0's schema (fresh id per ATTEMPT) was wrong and is corrected. A
+# description is part of the published document.
+#
+# 0.6.0 == `Health` gains `database_configured` and `database_usable`. Additive,
+# and additive still moves the minor: AS-24 says a changed surface gets a new
+# number and a published document is never edited in place, so 0.5.1 stays
+# frozen exactly as Studio pinned it. `status` was deliberately NOT touched --
+# widening `Literal["ok"]` would be a re-typing that could break a generated
+# client, which AS-23 treats as the breaking kind of change.
+#
+# 0.7.0 == `Capabilities` gains `sdk` (`{name, version}`) and `sdk_version` is
+# deprecated but still emitted. Additive, so a minor. The point is the NAME, not
+# the version: a bare `sdk_version` string can say what version and never which
+# SDK, and this service is to front Codex and Gemini as separate implementations
+# (plans.md, Plan 8). Two fields and no more -- an implementation name, a
+# language and a contract version were all considered and left out, because no
+# second implementation exists yet and AS-24 freezes whatever is published here.
+# `provider_selectors` was deliberately NOT renamed to free up the word
+# "provider": four clauses and a shipped Studio code path depend on it.
+#
+# 0.8.0 == MCP servers. `RunOptions` gains `mcp_servers` and
+# `strict_mcp_config`; `Capabilities` gains `allow_mcp_servers` and
+# `strict_mcp_config`. Additive, so a minor. Requested by Agent Studio, whose
+# ADR-0023 substitutes `${secret:NAME}` into an MCP server's `headers` and
+# `env` "on the way to agent-service" -- a route that did not exist until now.
+# Three of the SDK's four shapes are accepted; `sdk` is absent because it
+# carries a live in-process object and cannot cross an HTTP boundary.
+#
+# 0.9.0 == AGENT_ID provenance, asked for by Agent Studio. `sessions.agent_id`
+# and `transcript_entries.agent_id` in ONE migration, plus
+# `SessionRecord.agent_id`. Additive; the columns are nullable and absent
+# AGENT_ID is a normal deployment.
+#
+# THE API FIELD WAS NOT IN THE FIRST ACCEPTANCE, and the reason is worth
+# keeping: this side assumed Studio reads the shared schema directly and said
+# so as a decision rather than a question. It does not -- it queries only its
+# own schema and reaches this service over /v1. The column without the field
+# would have been readable by psql and by nobody else. Studio's argument for
+# the field over a direct read generalises: THE VERSION SCHEME CANNOT PROTECT
+# A COUPLING IT DOES NOT KNOW EXISTS, and schema-<version>.sql is published but
+# is not part of the signed bundle.
+#
+# 0.10.0 == the schema-revision boot gate. With persistence configured, refuse
+# to start when the revision this image expects differs from the one the
+# database is at, EITHER DIRECTION. No API change; boot behaviour only.
+#
+# IT REVERSES 0.6.0's "no gate covers this, and none is planned" for the
+# unmigrated case, and the rule that reconciles them is worth keeping: REFUSE AT
+# BOOT WHAT SHOULD NEVER HAVE STARTED; REPORT AT RUNTIME WHAT MAY RECOVER. The
+# gate is boot-only and never stops a running service; /healthz still reports a
+# database that breaks or recovers, and still takes nothing down.
+#
+# THE ONE BEHAVIOUR CHANGE A DEPLOYMENT CAN NOTICE: a container with
+# AGENT_SERVICE_DATABASE_URL set against an unmigrated database used to boot and
+# fail on the first history request. It now exits 3 naming the remedy.
+#
+# 0.11.0 == Q6, answered. Optional bearer authentication on /v1:
+# AGENT_SERVICE_AUTH_TOKEN turns it on, AGENT_SERVICE_REQUIRE_AUTH refuses to
+# boot without one, and `auth_required` is published on /healthz and
+# /v1/capabilities. Additive: OFF BY DEFAULT, so no existing deployment changes.
+#
+# THE SHAPE IS THE POINT, and it is narrower than "authentication". It answers
+# "is the caller the party that provisioned this container" and NOTHING else --
+# no per-request identity, no scoping -- because the consumer asked for exactly
+# that and said it would rather this service could not know which user is
+# calling. security-posture.md also puts authentication THIRD, behind network
+# isolation and a relay that are both the consumer's work, and this does not
+# pretend otherwise.
+# 0.12.0 == Plan 8 step 5: THE VERSION STREAMS SPLIT, and this number stops
+# meaning what it meant above. Everything from 0.2.0 to 0.11.0 in this comment
+# is the history of ONE number that was both "this build" and "the interface
+# document it serves" -- correct while one implementation was the only one
+# there could be.
+#
+# From here this is THE BUILD's version only. The document's version lives in
+# `spec/VERSION` at the platform root, is what `/openapi.json` reports as
+# `info.version`, and is what names `spec/snapshots/openapi/openapi-<version>.json`.
+# `agent_service/versions.py` holds both and explains the split;
+# `/v1/capabilities` publishes both, under `implementation` and `contract`.
+#
+# They are both 0.12.0, which is a coincidence of timing -- this is the release
+# that split them, so both moved at once. Nothing requires them to agree again.
+# The API change itself is additive: two new objects on /v1/capabilities.
+# 0.13.0 == the LISTEN contract, and a message where a traceback was. Both
+# came out of Agent Studio's `provisioning-contract.md`, which asked what
+# crosses the container boundary and found that nothing had ever written it
+# down. `python -m agent_service.spec` now also prints `listen`
+# {address, port}, so a consumer looks the port up instead of hardcoding it;
+# and an unreachable database is refused with a message naming the host and
+# the variable rather than a bare `socket.gaierror`.
+#
+# Still both the same number, and still a coincidence: no API surface changed,
+# so 0.13.0's OpenAPI document differs from 0.12.0's in `info.version` alone.
+# The document moves because the CONTRACT gained a clause -- the bind address
+# is now a requirement rather than something a consumer inferred from port
+# publishing working at all.
+version = "0.18.14"
+description = "HTTP access to the Claude Agent SDK, with an OpenAPI interface."
+authors = [
+    { name = "Chi Liu", email = "chi.liu.au@gmail.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    # The specification, rendered as pydantic models -- these generate the
+    # published OpenAPI document. Shared rather than copied because AS-24
+    # requires every implementation to serve the SAME document, and two
+    # hand-maintained copies cannot stay byte-identical.
+    # `[db]` -- this build persists, so it takes the database half of the
+    # specification package (AS-30). `codex-python` takes plain `agent-spec`
+    # until it does, and then changes this one string.
+    "agent-spec[db]",
+    "alembic>=1.18.5",
+    "asyncpg>=0.31.0",
+    "claude-agent-sdk>=0.2.128",
+    "fastapi>=0.140.0",
+    "pydantic-settings>=2.14.2",
+    "python-dotenv>=1.2.2",
+    "sqlalchemy[asyncio]>=2.0",
+    "uvicorn>=0.51.0",
+]
+
+# **NO `[project.scripts]`, and the absence is deliberate.** This build shipped
+# `agent-service-spec` -- the AS-25/AS-29 pre-boot command -- until 0.19.0.
+# Every fact it printed is now published in this build's own OpenAPI document as
+# the `PrebootSpec` component, with the values pinned by `const`, so a consumer
+# reads them from an artifact it already depends on at build time instead of by
+# running a container. `docker inspect` carries the impl, the document version
+# and the schema revision, which is the key that finds the right document.
+
+# A path source, not a published package: agent-spec versions with the
+# specification and is never released separately.
+[tool.uv.sources]
+agent-spec = { path = "../common/agent-spec", editable = true }
+
+[build-system]
+requires = ["uv_build>=0.11.27,<0.12.0"]
+build-backend = "uv_build"
+
+# LOAD-BEARING SINCE THE DISTRIBUTION WAS RENAMED. `uv_build` derives the module
+# path from the distribution name, so `agent-service-claude-python` made it look
+# for `src/agent_service_claude_python/__init__.py` and the build failed
+# outright. The import package is deliberately still `agent_service` (see the
+# note on `name` above), so the backend has to be told.
+[tool.uv.build-backend]
+module-name = "agent_service"
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "psutil>=7.2.2",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    # Splits this suite across processes. It is the LONG POLE of `ci.py`'s
+    # `unit` stage -- that stage runs its five suites concurrently, so the stage
+    # can never be faster than this one -- and what the suite spends is WAITING
+    # rather than computing: courtesy-interrupt windows, turn timeouts and
+    # shutdown budgets, asserted by actually elapsing.
+    #
+    # **NOT enabled in `addopts`, and that is the whole care here.** The
+    # Postgres tests share one server and one schema and isolate themselves with
+    # `drop_all`/`create_all` per test, so they are not safe to distribute --
+    # `conftest.py`'s `postgres_server` says so in as many words. `-n` is passed
+    # by the caller, and only ever together with `-m "not postgres"`.
+    "pytest-xdist>=3.6.1",
+    # Only ever imported by `tests/dbharness.py`, and only when
+    # AGENT_SERVICE_TEST_DATABASE_URL is unset. A dev dependency, never a
+    # runtime one: the service itself must not grow a Docker dependency.
+    "testcontainers[postgres]>=4.13.1",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = "-m 'not live' -q"
+markers = [
+    "live: hits the real Anthropic API and costs money (deselected by default)",
+    # Black-box tests against a RUNNING service (tests/conformance). Free
+    # unless also marked `live`: creating a session spawns the CLI but sends no
+    # prompt. They skip themselves when AGENT_SERVICE_TEST_BASE_URL is unset,
+    # so they are NOT deselected here -- a machine with a container running
+    # should run them without being asked twice.
+    "conformance: drives a running service over HTTP; needs AGENT_SERVICE_TEST_BASE_URL",
+    "slow: takes seconds per session (fills the cap); free, but not quick",
+    # NOT deselected by default: free, and `tests/dbharness.py` supplies a
+    # database on its own, so these should run wherever they can. They skip on
+    # their own when neither AGENT_SERVICE_TEST_DATABASE_URL nor Docker is
+    # available -- the marker exists so `-m 'not postgres'` can opt out of
+    # starting a container even on a machine that could.
+    "postgres: needs a real PostgreSQL (env var, else a testcontainer)",
+]
