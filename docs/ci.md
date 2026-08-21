@@ -1,7 +1,7 @@
 # CI — `ci.py`, and why there is no CI service
 
-Companion to
-[`deployment.md`](../impl/claude-python/docs/claude-python-references.md). This is the
+Companion to the deployment notes in
+[`claude-python-references.md`](../impl/claude-python/docs/claude-python-references.md). This is the
 reference for everything the repository checks automatically: what runs, what
 each stage proves, every setting it uses, and the parts that look simplifiable
 and are not.
@@ -10,17 +10,21 @@ and are not.
 command with an implementation directory as its working directory; git and the
 documentation stages run from the platform root.
 
-**Three lists, different lengths, on purpose.** Plan 8 step 7 is arriving one
-stage at a time rather than all at once:
+**Three lists, different lengths, on purpose.** Plan 8 step 7 arrived one stage
+at a time rather than all at once, and is now complete:
 
 | Constant | Contents | Used by |
 |---|---|---|
-| `IMPL` | `impl/claude-python` | `freeze` (its `schema/` and migration tree), and `_run`'s default working directory |
-| `UNIT_IMPLS` | `claude-python`, `codex-python`, `gemini-python` | `unit` — a directory with no `pyproject.toml` or no `tests/` is skipped with a printed line |
-| `CONTAINER_IMPLS` | `claude-python`, `codex-python` | `container` and `gates` — since 2026-08-08, when the Codex build gained a Dockerfile |
+| `IMPL` | `impl/claude-python` | `freeze` (the version and the migration tree), and `_run`'s default working directory |
+| `UNIT_IMPLS` | `claude-python`, `codex-python`, `gemini-python`, `common/agent-spec` | `unit` — a directory with no `pyproject.toml` or no `tests/` is skipped with a printed line |
+| `CONTAINER_IMPLS` | `claude-python`, `gemini-python`, `codex-python` | `container` and `gates` — all three since 2026-08-12, when the Gemini build gained persistence |
 
-A directory can be in one list and not the next, and `gemini-python` — in
-`UNIT_IMPLS` and skipped there for want of a project — is what that looks like.
+A directory can still be in one list and not the next, and `common/agent-spec`
+is what that looks like: it has a suite worth running — ~1,200 lines and 25
+tests since the persistence layer moved into it — and **must never join
+`CONTAINER_IMPLS`**, because there is no image to build from it. `UNIT_IMPLS` is
+listed explicitly rather than globbed for exactly that reason: a glob of
+`impl/*` would try to containerise it.
 
 **It lives in `.ci/`, and resolves `ROOT` as its own parent's parent.** It sat
 at the repository root until 2026-08-07 and moved so that the root shows three
@@ -73,7 +77,7 @@ would hold a repository whose documented capability is arbitrary shell execution
 
 ```bash
 uv run --no-project python .ci/ci.py                  # all six stages, 3m58s
-uv run --no-project python .ci/ci.py --fast           # freeze + links + unit, no Docker
+uv run --no-project python .ci/ci.py --fast           # freeze + links + references + unit, no Docker
 uv run --no-project python .ci/ci.py --stages freeze,container
 uv run --no-project python .ci/ci.py --fast --fail-fast     # what the hook runs
 uv run --no-project python .ci/ci.py --fast --serial-unit   # one suite at a time, streaming
@@ -90,7 +94,7 @@ git config core.hooksPath .ci/hooks
 | Flag | Effect |
 |---|---|
 | `--stages a,b` | Run a subset. Unknown names are an error, not a silent skip. |
-| `--fast` | `freeze` + `links` + `unit`, and `unit` gets `-m "not postgres and not live"`. Needs no Docker daemon. |
+| `--fast` | `freeze` + `links` + `references` + `unit`, and `unit` gets `-m "not postgres and not live"`. Needs no Docker daemon. |
 | `--fail-fast` | Stop at the first failing stage. Unreached stages print as `n/a`. |
 | `--serial-unit` | Run `unit`'s suites one at a time, streaming, as it did before 2026-08-17. Roughly doubles the stage. For watching a suite make progress, or reading a hang against the others. |
 
@@ -113,7 +117,7 @@ setup depends on an earlier one having *passed* (`gates` needs the image
 
 | Stage | Proves | Needs | Measured |
 |---|---|---|---|
-| `freeze` | no published document was edited after publication | git | 1–9 s |
+| `freeze` | every release tag still resolves to its recorded commit; `spec/` carries one version | git | 1–9 s |
 | `links` | every relative link and `#anchor` in the documentation resolves | nothing | <0.1 s |
 | `references` | no code comment names a document; every `CP-`/`CX-`/`GP-` ID resolves | nothing | 1–2 s |
 | `unit` | **every implementation's** in-process suite, and the specification's document tier | Docker¹ | 20 s under `--fast`; 40–60 s by default (86 s / 89 s with `--serial-unit`) |
@@ -141,7 +145,7 @@ of `impl/*` for exactly that reason. A directory with no `pyproject.toml` or no
 `tests/` is skipped with a printed line, so an implementation that silently
 stopped being collected is visible rather than merely absent.
 
-¹ Only because `impl/claude-python/tests/dbharness.py` starts a Postgres when
+¹ Only because `agent_spec.db.testing` starts a Postgres when
 `AGENT_SERVICE_TEST_DATABASE_URL` is unset. `--fast` adds `-m "not postgres"` and
 needs no daemon.
 
@@ -150,40 +154,42 @@ needs no daemon.
 This is AS-24 of the signed interface contract. Until this stage existed the rule
 held because it was *remembered*.
 
-**In `spec/<version>/` and `spec/schema/`**, two checks per
-file:
+**THE TAG IS THE FREEZE, since 2026-08-19, and this stage was rewritten around
+that.** It used to walk git history for a content commit after a freeze point —
+a lot of machinery defending a weak position, because a directory *can* be
+edited and the walk could only notice afterwards. Now `spec/` carries the
+current version alone and every delivered version lives in its
+`release-<version>` tag. Git makes the bytes immutable, so there is nothing to
+watch, and **the one remaining way a delivered version can change is a MOVED
+TAG**.
 
-1. **No content commit after the file was frozen** — see the rule below, which
-   changed on 2026-08-08.
-2. Its working tree still matches what git has for it.
+Three checks on the openapi stream:
 
-**Two STREAMS rather than two directories, since the `openapi/` collapse**
-(2026-08-08). Each document now lives alone in its own version directory —
-`spec/0.16.0/openapi-0.16.0.json` — so `freeze` groups by stream
-(`openapi` / `schema`) instead of by directory, which is what the grouping always
-meant. It globs `snapshots/*/openapi-*.json`, `releases/*/openapi-*.json` and
-`snapshots/schema/schema-*.sql`.
+1. **Every recorded release tag still resolves to its recorded commit.** The
+   rows come from `spec/README.md`, parsed **by shape rather than by position** —
+   three cells with a 40-character sha1 last — so the table survives the README
+   being rewritten around it. **A missing tag is a failure, not a warning**: a
+   row is a claim that a version was delivered, and if the tag is gone either
+   the claim is false or the tag was deleted. Both need a person.
+2. **`spec/openapi/` carries exactly one version.** Two would mean a cut left a
+   file behind, and a consumer reading the directory could not tell which is the
+   specification.
+3. **A bare `spec/VERSION` must be tagged.** Main is always a `-snapshot`; the
+   bare state exists at exactly one commit, the one the tag names. A bare
+   version anywhere else is a cut that was never tagged — and an artifact built
+   there would claim to be a release while coming from an unnamed commit.
 
-**`spec/releases/` joined that list on 2026-08-13, and until then this stage did
-not know it existed.** `versioning.md` §4 step 8 has always said *"`freeze` now
-enforces the release"*; the glob read one directory and the first version cut
-would have landed in the other. A delivery that nothing freezes is precisely the
-failure this stage exists to make impossible, so it was fixed ahead of the cut
-rather than at it. Nothing distinguishes the two directories here — a published
-file is frozen wherever it sits, and what says whether a file is published is the
-`-snapshot` suffix.
+**The DDL keeps the old machinery**, unchanged, because its stream did not move.
+`spec/database/agent-service-<revision>.sql` is named by Alembic revision, a
+revision's DDL is written once, and the file at the current head is still in
+flight until a new revision appears. Two checks per file: no content commit
+after it was frozen, and the working tree still matches what git has.
 
-**One consequence of per-implementation filenames, and it is deliberate.** The
-in-flight exemption compares `path.stem.split("agent-service-", 1)[-1]` against `spec/VERSION`,
-so `openapi-0.19.0-claude-python.json` yields `0.19.0-claude-python` and never
-matches. A document in `spec/releases/` therefore gets **no** exemption: it is
-frozen from the moment it exists, which is what `spec/releases/README.md` says
-and what the old single-document exemption was too loose to deliver. The
-in-flight document is the one in the `-snapshot` directory, and that directory is
-excluded by name. **So the cut's own commit cannot pass this stage** — the
-`git mv` is uncommitted, `--follow` cannot cross it, and the files read as *not
-committed*. Same position as Plan 8 step 1 and the same answer: `--no-verify`,
-then the full run immediately after.
+**`git diff`, not a byte comparison**, and that is deliberate. Git for Windows
+sets `core.autocrlf=true` globally and `.gitattributes` here is narrow enough to
+say nothing about `spec/database/`, so a blob's bytes and the working tree's
+bytes legitimately differ on this host. `git diff` applies the same filters git
+itself would, which is the comparison that means *unchanged*.
 
 **Why the collapse.** Every document existed twice: a canonical under
 `snapshots/openapi/` and a delivery copy under `snapshots/<version>/`, with the
@@ -192,20 +198,20 @@ identical. Sixteen files and the `Canonical`-is-a-path branch of
 `_check_bundle_copies` went away together; those rows now read `frozen`, meaning
 the file *is* the artifact and its hash is the whole check.
 
-**`schema/` deliberately did not collapse.** A document belongs to one version;
-the DDL is named by Alembic revision and most versions change no schema. Filing
-it under versions would make the platform's schema reachable only by knowing
-which release shipped it. A version that *changes* the schema carries a copy —
-0.17.0 is the first, and that copy is a normal delivery row with a path
-canonical.
+**The DDL deliberately did not collapse into versions.** A document belongs to
+one version; the DDL is named by Alembic revision and most versions change no
+schema. Filing it under versions would make the platform's schema reachable only
+by knowing which release shipped it. **It is a separate stream** — it moves when
+a migration lands, not when the document does — and all three implementations
+share it.
 
 **This paragraph used to say the DDL "describes this implementation's database",
 and Plan 9 is the correction.** Persistence is a feature of `agent-service`, not
 of any agent SDK — the tables store what `/v1` returns — so a second
 implementation persisting the same API needs the same schema, not one of its
-own. Step 1 (2026-08-08) gave the DDL its own version stream; step 2 moves the
-file to `spec/schema/` and leaves the Alembic tree behind as its
-generator.
+own. Step 1 (2026-08-08) gave the DDL its own version stream; step 2 moved the
+file to what is now `spec/database/` and left the Alembic tree behind at
+`impl/common/db/` as its generator.
 
 **Check 1 follows renames, and that is Plan 8's doing** (step 1, 2026-08-07).
 It used to read `git log --format=%H -- <path>` and require exactly one commit
@@ -254,10 +260,10 @@ published file is in the same position.
 **The in-flight file is exempt in each directory, and the two directories read
 different streams for it.**
 
-| Directory | Named by | Read from |
+| Stream | Named by | Read from |
 |---|---|---|
-| `spec/<version>/openapi-<version>.json` | the DOCUMENT version | `spec/VERSION` (Plan 8 step 5) |
-| `impl/claude-python/schema/` | the **Alembic revision** | the migration tree's head (Plan 9 step 1) |
+| `spec/openapi/<impl>-<version>.json` | the DOCUMENT version | `spec/VERSION` (Plan 8 step 5) |
+| `spec/database/agent-service-<revision>.sql` | the **Alembic revision** | the migration tree's head (Plan 9 step 1) |
 
 **Nothing is named by the build version any more.** `schema/` was, and it was
 the wrong stream for a schema several implementations share:
@@ -346,13 +352,22 @@ happens into the *new* version's directory.
 
 ### `links` — every relative link and `#anchor` resolves
 
-Scans `README.md`, `CLAUDE.md` and everything under `docs/` **at both levels** —
-the platform root and `impl/claude-python/`. Both, because the two `docs/` trees
-link across the boundary, which is exactly the class of link a move breaks.
-It also scans `spec/` and `docs/to-agent-harness/`, named explicitly since step 2
-moved them out of `docs/`. Checks two things per link: the file exists, and —
-for a `#fragment` into a `.md` file — a heading slugifies to it. Costs nothing;
-runs in `--fast` and therefore in the hook.
+Scans `README.md`, `CLAUDE.md` and everything under `docs/` **at four levels** —
+the platform root and each of the three builds. All four, because a build's
+documents live beside its code and the two `docs/` trees link across the
+boundary, which is exactly the class of link a move breaks. It also scans
+`spec/`, named explicitly since Plan 8 step 2 moved it out of `docs/`; the
+outbox came back under `docs/` on 2026-08-07 and needs no entry of its own.
+Checks two things per link: the file exists, and — for a `#fragment` into a
+`.md` file — a heading slugifies to it. Costs nothing; runs in `--fast` and
+therefore in the hook.
+
+**A build with no entry in `_LINK_LEVELS` is not scanned, and the stage passes
+anyway** — which has now been the same defect twice. `codex-python` went
+unscanned for its whole existence until it was noticed; `gemini-python` then
+repeated it exactly, unscanned from 2026-08-11 to 2026-08-21. Nothing reports
+this, because a stage that reads fewer files simply passes faster. **Add the row
+in the commit that creates the build.**
 
 **Why it exists.** These documents cross-reference each other constantly; that
 is the house style and it is what makes the reasoning followable. So a moved
@@ -441,7 +456,7 @@ a path that rots.
 
 ### `unit` — the in-process suite
 
-`uv run pytest` in `impl/claude-python/`. `tests/dbharness.py` supplies its own
+`uv run pytest` in `impl/claude-python/`. `agent_spec.db.testing` supplies its own
 Postgres: an already-running server if `AGENT_SERVICE_TEST_DATABASE_URL` is set,
 otherwise a testcontainer, otherwise those tests skip.
 
@@ -593,7 +608,7 @@ separate process with its own virtualenv. **None binds a socket** — every suit
 drives its app through an in-process ASGI transport at `http://test` — so there
 is no port to collide on. Everything a suite writes or spawns comes from a
 per-test `tmp_path`. The one genuinely shared resource is the Postgres that
-`dbharness.py` starts outside `--fast`, and no other suite has a database.
+`agent_spec.db.testing` starts outside `--fast`, and no other suite has a database.
 
 **Where the time actually goes, since it is not compute.** The slow tests are
 the ones asserting a *budget*, and they assert it by waiting: courtesy-interrupt
@@ -716,7 +731,7 @@ exactly one entry carries one:
 
 **The 151 are an unbuilt feature, not a divergence.** They are `StoredEvent` and
 its neighbours, and *persistence is a feature of `agent-service`, not of the
-agent SDK* (`docs/history/plan-9-design.md` (removed 2026-08-19; in `git log`) §1) — the Claude SDK has no
+agent SDK* (`docs/history/plan-9-design.md` (removed 2026-08-19; not carried in this repository) §1) — the Claude SDK has no
 database either. They come back when this build implements it, and Plan 9 makes
 the schema the platform's so it does not invent a second one. Do not read that
 number as evidence about the core boundary.
@@ -1048,11 +1063,11 @@ passing. Widen it deliberately, in its own commit, not as a side effect.
 | a `build:` `context:` in any compose file | whether `impl/.dockerignore` is still at the context root. An ignore file one directory below the context is read by nothing and fails silently |
 | whether a blocked live tier is still blocked | delete the `live_tier_blocked_by` string and run it. That field is a record of a pending decision, not a permanent exemption |
 | whether the service applies migrations | the `container` stage's ordering, and whether `compose.ci.yaml` still needs a Postgres port |
-| the sha256 table in `spec/README.md` | nothing — `freeze` reads it, by shape. But keep it a 3-column table with the hash last. A row for a version cut into `spec/releases/` keeps the same cell (`0.19.0/openapi-0.19.0-claude-python.json`): `_delivery_copy` tries releases, then snapshots |
-| **where a published document lives** | **eight sites implement one rule** — *releases first, else snapshots* — and they cannot share code, being a stdlib-only runner, the spec suite, a packaging script, three build trees and one build's test. `_version_dir` in `spec/conformance/conftest.py`; `_delivery_copy` **and** the `freeze` glob in `ci.py`; `version_dir` in `bundle.py`; `_version_dir` in each of the three generators; and the inline lookup in `impl/claude-python/tests/test_api_meta.py`. Change the rule and all eight move together |
+| the released-versions table in `spec/README.md` | `freeze`, which reads it **by shape**: three cells with a 40-character sha1 last. Keep that shape and the table can be rewritten around freely; lose it and every release silently stops being checked |
+| **where a published document lives** | **five surviving `_version_dir`/`version_dir` functions** — `spec/conformance/conftest.py`, `.ci/bundle.py`, and the three generators. Since 2026-08-19 every one of them returns `spec/openapi/` unconditionally and ignores its `version` argument, which is what the `# noqa: ARG001` on each is recording. They are kept as functions rather than inlined so that a future scheme has one obvious place per tree to change |
 | which conformance tests are stack-conditional | whether `container` still needs two passes; today exactly one module is |
 | `pyproject.toml`'s `addopts` | the "nothing can spend money" claim above, which rests on it |
-| `tests/dbharness.py`'s resolution order | `unit`'s Docker dependency and what `--fast` actually skips |
+| `agent_spec.db.testing`’s resolution order | `unit`'s Docker dependency and what `--fast` actually skips |
 | adding a unit suite that binds a real port, writes outside `tmp_path`, or wants a fixed container name | whether `unit` can still run its suites concurrently. Today none does, which is the whole basis for overlapping them — a suite that does needs either a per-suite allocation or `UNIT_MAX_WORKERS = 1` |
 | adding a test to `claude-python` that shares state across tests, or making a Postgres test run without the `postgres` marker | `UNIT_XDIST_WORKERS`. `-n` is passed only alongside `-m "not postgres"`, and a shared-state test that escapes that marker gets distributed and flakes rather than failing |
 | `conftest.py`'s `postgres_server` scope or its `drop_all`/`create_all` isolation | whether the Postgres tests are still undistributable. If they become worker-safe, `-n` can leave the `--fast` branch — which is what would make the *default* run faster too |

@@ -94,9 +94,9 @@ def specification() -> dict[str, object]:
         # auth landed hours later (`auth.py`), the refusal is gone, and the value
         # this field was promised is now wrong in the consumer's favour.
         #
-        # A fact changed, so the thread reopens; that is what
-        # `docs/to-agent-harness/` is for. Do not "correct" this to `false` to
-        # match the correspondence -- the correspondence is what gets corrected.
+        # A fact changed, so the thread reopens; that is what the outbound
+        # channel is for. Do not "correct" this to `false` to match the
+        # correspondence -- the correspondence is what gets corrected.
         "auth_enforced": True,
         # The variable this build reads its endpoint from. **Nothing in the
         # app-server reads it** -- measured, three probes -- so this service reads

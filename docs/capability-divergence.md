@@ -2,7 +2,7 @@
 
 **Same shape, different values — and that split is the design rather than an
 accident.** All three implementations answer the identical `Capabilities` model
-from `impl/common/agent-spec`, serve the same fourteen `/v1` operations, and
+from `impl/common/agent-spec`, serve the same thirteen `/v1` operations, and
 share one conformance suite. A client parses one payload whichever image it has.
 What it *reads out of* that payload diverges on nearly everything behavioural.
 
@@ -47,7 +47,7 @@ The values live in
 
 The convergence is real, and it is where the product's value sits:
 
-- **One `Capabilities` model**, one set of fourteen `/v1` operations, one error
+- **One `Capabilities` model**, one set of thirteen `/v1` operations, one error
   vocabulary, one session lifecycle, one set of boot gates.
 - **One conformance suite** in `spec/conformance/`, which judges each build
   against the specification rather than against itself.

@@ -38,7 +38,8 @@ compresses poorly) and buys nothing unless you need byte-identical layers.
 
 **Check the architecture once.** This repo's daemon is `linux/amd64`. If the
 target differs, add `--platform linux/amd64` to `docker build`, or build natively
-there. Most x86 laptops and servers are amd64, so this is usually a no-op.
+there. Most x86 laptops and servers are amd64, so this is usually a no-op —
+check it once rather than discovering it from a failed build.
 
 ---
 
@@ -109,8 +110,9 @@ Everything runs on the target machine. Nothing here needs key auth.
 git archive --format=tar.gz --prefix=agent-service/ -o temp/agent-service-src.tar.gz HEAD
 ```
 
-~627 KB, 146 files, no `.venv`, no `.git`, no `.env`. It lands in `../temp`, which
-is gitignored, so a stale archive can never be committed by accident.
+~627 KB, 146 files, no `.venv`, no `.git`, no `.env`. It lands in `temp/` at the
+repository root, which is gitignored, so a stale archive can never be committed
+by accident.
 
 **It archives `HEAD`, not your working tree** — commit first, or the copy you
 carry across will be missing your latest edits. Re-run after any commit. Move it

@@ -3,8 +3,13 @@
 # Tail matches IMPLEMENTATION_NAME and the directory, family matches
 # agent-service-claude-python and agent-service-codex-python.
 name = "agent-service-gemini-python"
-version = "0.0.9"
+version = "0.19.0"
 description = "HTTP access to Gemini CLI headless, satisfying the agent-service specification."
+authors = [
+    { name = "Chi Liu" }
+]
+# SPDX expression, PEP 639. Text in the repository's root `LICENSE`.
+license = "Apache-2.0"
 requires-python = ">=3.13"
 dependencies = [
     # The specification as pydantic models -- shared, not copied. AS-24

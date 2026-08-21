@@ -22,8 +22,9 @@ came back; that directory no longer exists. **A comment cites a `CP-nnn` ID and
 never a path**, so this paragraph is background rather than something a comment
 depends on. The platform's own docs — `ci.md`,
 `plans.md`, `dev-todo.md`, `open-questions.md`, `security-posture.md` — are at
-`../../docs/`, and the contract and the outbox are at `../../spec/` and
-`../../docs/to-agent-harness/`.
+`../../docs/`, and the contract is at `../../spec/`. The outbox is at
+`../../docs/to-agent-harness/`, which is tracked in the development
+repository and removed by the export that builds the public one.
 
 **The same convention holds in the code**, and it is what made Plan 8 step 1
 cheap: 79 of the 83 surviving path citations in comments cite a document that
@@ -163,14 +164,14 @@ in the references file, each with its own `CP-nnn`.
 **One level up**, because they are the platform's and a second implementation
 would share them rather than copy them:
 
-- `../../docs/ci.md` — what `../../ci.py` runs, every setting it uses, and the
+- `../../docs/ci.md` — what `../../.ci/ci.py` runs, every setting it uses, and the
   "Recheck when these change" index. **Read before touching CI, the compose
   overlay, or the pre-commit hook.**
 - `../../docs/plans.md` — what shipped (plans 1–4, summarised) and what is
   designed and unbuilt (6, verbatim). Consolidated from eight `plan-*.md` files
-  on 2026-07-31; the originals are in `git log`. **Plans 5 (multi-workspace
+  on 2026-07-31; the originals are in the pre-publication history. **Plans 5 (multi-workspace
   router) and 7 (Projects) were removed as out of scope on 2026-08-06** — do not
-  reintroduce them; `git show b7be5fc:docs/plans.md` has the text.
+  reintroduce them; the pre-publication history has the text.
 - `../../docs/dev-todo.md` — everything outstanding, in one place. **Its "Do not
   'fix' these" section is the one to read first**: eleven behaviours that look
   like defects and are decisions.
@@ -192,7 +193,7 @@ would share them rather than copy them:
 
 ## Gotchas
 
-- **`../../ci.py` is the CI. There is no CI service and no git remote**, by
+- **`../../.ci/ci.py` is the CI. There is no CI service and no git remote**, by
   decision (2026-08-06) — **`../../docs/ci.md` is the reference**; read it before
   changing any of this. Two parts of it
   are load-bearing and look like they could be simplified: the `container` stage
@@ -231,10 +232,10 @@ would share them rather than copy them:
   run; `--out-dir` overrides both.
 - **Both directories are committed and frozen.** Every file except the current
   `pyproject.toml` version must have exactly one commit that changed it and must
-  match what git has — that is AS-24, and `../../ci.py`'s `freeze` stage is what
+  match what git has — that is AS-24, and `../../.ci/ci.py`'s `freeze` stage is what
   enforces it, following renames so a move is not read as a republication.
   **`schema/` no longer exists in this directory at all** — Plan 9 moved the DDL
-  to `../../spec/schema/`, so the old README's argument about whether to
+  to `../../spec/database/`, so the old README's argument about whether to
   gitignore it is history. The same stage
   also checks `../../spec/`'s delivery copies against the sha256 table
   in that bundle's README — a reversal of a documented decision, narrow because

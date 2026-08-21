@@ -21,12 +21,12 @@ worth doing between a release being prepared and the tag being cut.
 from __future__ import annotations
 
 #: MUST equal `spec/VERSION`.
-DOCUMENT_VERSION = "0.19.0"
+DOCUMENT_VERSION = "0.20.0-snapshot"
 
 #: This build. MUST equal `pyproject.toml`'s `version`. Starts at 0.0.1 rather
 #: than at the document's number: the two streams are independent and this one
 #: has shipped nothing.
-IMPLEMENTATION_VERSION = "0.0.9"
+IMPLEMENTATION_VERSION = "0.19.0"
 
 #: Matches the directory under `impl/`, because that is what tells two
 #: implementations apart. Reported as `capabilities.impl.name`.

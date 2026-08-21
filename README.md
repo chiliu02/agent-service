@@ -1,69 +1,150 @@
 # agent-service
 
-**An HTTP contract for driving a local coding agent, and the implementations
-that satisfy it.** One repository, one conformance suite, one CI runner — and
-**three implementations**, each fronting a different agent.
+**An HTTP contract for driving a local coding agent, and three implementations
+that satisfy it.**
 
-**The third one is the evidence the design works.** `gemini-python` wraps a
-target with no SDK at all — a Node CLI spawned once per turn — and joining it
-to the platform removed **nothing** from the shared core. What it cost was
-eleven fixes in the new build, which is the arrangement working as intended:
-the specification bends the implementation, never the reverse.
+You give it a workspace and a prompt over HTTP; it runs a real coding agent
+against that workspace in a container and streams back what happened — messages,
+tool calls, token usage, cost. Multi-turn sessions, resumable, optionally
+persisted to Postgres.
 
-> ⚠️ The service each implementation ships is **not hardened**, and how far
-> from hardened differs per build. Authentication is optional and off by
-> default on all three; what confines the agent is not the same in any two of
-> them, and `permission_enforcement: "none"` is published by all three while
-> meaning three different things. Read the build's own guide — and
-> `always_disallowed_tools` beside that field — before running one anywhere but
-> a machine you would hand to a stranger.
+The point is that **the same thirteen `/v1` operations drive three different
+agents**. Swap the image and your client does not change:
+
+| Build | Agent | Notes |
+|---|---|---|
+| [`impl/claude-python`](./impl/claude-python/) | [Claude Agent SDK](https://github.com/anthropics/claude-agent-sdk-python) | The reference build |
+| [`impl/codex-python`](./impl/codex-python/) | OpenAI Codex SDK | Sandboxes every turn; the only one whose agent cannot reach the network |
+| [`impl/gemini-python`](./impl/gemini-python/) | Gemini CLI headless | **No SDK exists** — the agent is a Node program spawned per turn |
+
+Where they genuinely cannot behave identically, they say so at runtime on
+`/v1/capabilities` rather than differing silently.
+[`docs/capability-divergence.md`](./docs/capability-divergence.md) is the
+side-by-side.
+
+> [!WARNING]
+> **This service exists to give a coding agent a shell, and it is not
+> hardened.** Authentication is optional and **off by default** on all three
+> builds. All three publish `permission_enforcement: "none"`, and it means three
+> different things across them. What confines the agent is the container and
+> your mount layout — nothing else.
+>
+> Do not put an unauthenticated instance on a network you do not control.
+> [`SECURITY.md`](./SECURITY.md) has the minimum for anything beyond your own
+> machine.
+
+## Quickstart
+
+You need Docker, and an API key for whichever agent you want to run. Using the
+reference build:
+
+```bash
+git clone <this repo> && cd agent-service/impl/claude-python
+cp .env.compose.example .env      # then edit: WORKSPACE_HOST_PATH, REFERENCE_HOST_PATH
+echo "ANTHROPIC_API_KEY=sk-ant-..." >> .env
+
+docker compose up -d --build --wait
+```
+
+`--wait` matters: plain `up -d` reports `Started` and returns 0 for a container
+that has already exited 3.
+
+```bash
+curl -s localhost:8000/v1/capabilities | jq '{impl, auth_required, sandbox}'
+curl -s localhost:8000/v1/query -H 'content-type: application/json' \
+  -d '{"prompt":"What files are in the workspace? Summarise in one line."}'
+```
+
+Interactive docs are at `http://localhost:8000/docs`.
+
+**Two things that will bite you first**, both deliberate refusals rather than
+crashes — the container exits **3** if either is wrong:
+
+- **A missing mount.** Docker silently *creates* a missing bind-mount source and
+  starts anyway, so the service checks instead. `mkdir -p` before `up`.
+- **A missing credential.** The log message names the problem, the fix, and the
+  escape hatch.
+
+**Chown the workspace to `1000:1000` first.** Docker creates a missing mount
+point as `root:root`, and the agent is not root. The uid is `const`-pinned in
+each build's OpenAPI document as `PrebootSpec.runs_as`.
+
+### The API in one screen
+
+| | |
+|---|---|
+| `POST /v1/query`, `/v1/query/stream` | one-shot: prompt in, result or SSE out |
+| `POST /v1/sessions` | start a multi-turn session |
+| `POST /v1/sessions/{id}/messages`, `/messages/stream` | a turn in that session |
+| `POST /v1/sessions/{id}/interrupt` | stop a turn in flight |
+| `GET /v1/sessions/{id}/transcript` | what was said, if persistence is on |
+| `GET /v1/capabilities` | **read this first** — what this build can and cannot do |
+
+## Why three builds and not one with three modes
+
+The value here is that it wraps **the agent** — session lifecycle, the tool loop,
+permission plumbing — not the model API. Those differ per *product* far more than
+the models do: different tool loops, different session lifecycles, different
+sandbox models, and one target that ships no SDK at all. What generalises is the
+interface contract, the conformance suite and `/v1/capabilities`. The code does
+not, and trying to share it is how you get an abstraction shaped like whichever
+SDK arrived first.
+
+**The third build is the evidence.** `gemini-python` wraps a target with no SDK —
+a Node CLI spawned once per turn — and joining it to the platform removed
+**nothing** from the shared core. The conformance suite needed two new entries in
+one probe table and no new clause. What it cost was eleven fixes *in the new
+build*, which is the arrangement working as intended: the specification bends the
+implementation, never the reverse.
+
+**It is not about language.** All three targets are drivable from Python. A build
+is separate because its subject is separate.
+
+**A target must run LOCALLY, in our own container.** A managed cloud agent
+runtime — one that hosts the agent for you — is out of scope whatever its
+capabilities.
 
 ## What is here
 
 | | |
 |---|---|
-| [`spec/`](./spec/) | **The product.** One directory per released version, written once and never edited; the manifest at the top of its README is checked by CI on every run. |
-| [`impl/claude-python/`](./impl/claude-python/) | The [Claude Agent SDK](https://github.com/anthropics/claude-agent-sdk-python) build. **The only one delivered as a release.** [Operations](./impl/claude-python/docs/claude-python-operations.md) runs it; the [guide](./impl/claude-python/docs/claude-python-guide.md) is for a client author. |
-| [`impl/codex-python/`](./impl/codex-python/) | The OpenAI Codex SDK build. Sandboxes every turn, and is the only one whose agent cannot reach the network. Its [guide](./impl/codex-python/docs/codex-python-guide.md). |
-| [`impl/gemini-python/`](./impl/gemini-python/) | Gemini CLI headless — **no SDK exists**, so the agent is a Node program spawned per turn. Its [guide](./impl/gemini-python/docs/gemini-python-guide.md). |
-| [`impl/common/agent-spec/`](./impl/common/agent-spec/) | The shared models and the database layer. **Names no build, and must not.** |
-| [`ci.py`](./.ci/ci.py) | Everything this repository can check for free, in one command. [`docs/ci.md`](./docs/ci.md) is what it does and why. |
-| [`docs/to-agent-harness/`](./docs/to-agent-harness/) | The outbox — correspondence with the consumer. |
-
-## Why three builds and not one with three modes
-
-The value of this service is that it wraps **the agent** — session lifecycle,
-the tool loop, permission plumbing — not the model API. Those differ per
-product far more than the models do: different tool loops, different session
-lifecycles, different sandbox models, and one target that ships no SDK at all.
-What generalises is the interface contract, the conformance suite and
-`/v1/capabilities`; the code does not.
-
-**The criterion for a target is that it runs LOCALLY, in our own container.** A
-managed cloud agent runtime — one that hosts the agent for you — is out of
-scope whatever its capabilities.
-
-**It is not about language.** All three targets are drivable from Python, and
-this file used to say language was the reason. A build is separate because its
-subject is separate.
-
-[`docs/plans.md`](./docs/plans.md) Plan 8 is the reasoning;
-`docs/plan-8-design.md` (removed 2026-08-19; in `git log`) is the target structure and
-the migration into it, measured step by step.
+| [`spec/`](./spec/) | **The product.** Three directories — the HTTP contract, the DDL, the conformance suite — and exactly one version, the current one. **A release is a git tag**: `release-<version>` names an immutable commit, and CI checks on every run that every tag still points where the manifest says. |
+| [`impl/`](./impl/) | The three builds. Each has its own guide under `impl/<build>/docs/`, written for a client author. |
+| [`impl/common/`](./impl/common/) | `agent-spec/` is the specification rendered as pydantic models, plus the database layer — it **names no build, and must not**. `db/` is the Alembic tree that generates `spec/database/`; `web/` is a dev console. |
+| [`.ci/ci.py`](./.ci/ci.py) | Everything this repository can check for free, in one command. [`docs/ci.md`](./docs/ci.md) is what it does and why. |
+| [`docs/`](./docs/) | Platform-level: CI, versioning, plans, security posture, capability divergence, the database model, running locally, deploying remotely. |
 
 ## Running the checks
 
 ```bash
-uv run --no-project python .ci/ci.py          # freeze, links, unit, container, gates
-uv run --no-project python .ci/ci.py --fast   # ... the three that need no Docker
+uv run --no-project python .ci/ci.py          # freeze, links, references, unit, container, gates
+uv run --no-project python .ci/ci.py --fast   # ... the four that need no Docker
 ```
 
-`--no-project` because the platform root is not a uv project — `pyproject.toml`
-belongs to the implementation. `ci.py` is stdlib-only, which is what will let
-one runner drive an implementation that is not Python at all.
+`--no-project` is required: the platform root is not a uv project —
+`pyproject.toml` belongs to each implementation — so a plain `uv run` walks *up*
+out of the repository looking for one. `ci.py` is stdlib-only, which is what will
+let one runner drive an implementation that is not Python at all.
 
-There is a pre-commit hook and git does not install it for you:
+There is a pre-commit hook, and git does not install it for you:
 
 ```bash
 git config core.hooksPath .ci/hooks
 ```
+
+**Nothing in CI can spend money.** Every pytest invocation carries
+`-m 'not live'`, and no stage passes `-m live` or unsets it.
+
+## Contributing
+
+[`CONTRIBUTING.md`](./CONTRIBUTING.md) — including the three conventions that
+will catch you out: `--no-project` is not optional, a code comment may cite
+exactly one document by ID, and versions are not a contributor's to cut.
+
+Security issues: **[`SECURITY.md`](./SECURITY.md)**, not a public issue. It also
+explains why "the agent ran a command I did not expect" is the product rather
+than a vulnerability.
+
+## License
+
+[Apache-2.0](./LICENSE).

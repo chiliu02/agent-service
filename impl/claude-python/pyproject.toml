@@ -126,11 +126,15 @@ name = "agent-service-claude-python"
 # The document moves because the CONTRACT gained a clause -- the bind address
 # is now a requirement rather than something a consumer inferred from port
 # publishing working at all.
-version = "0.18.14"
+version = "0.19.0"
 description = "HTTP access to the Claude Agent SDK, with an OpenAPI interface."
 authors = [
     { name = "Chi Liu", email = "chi.liu.au@gmail.com" }
 ]
+# SPDX expression, PEP 639. The text is the repository's single root `LICENSE`
+# and is deliberately NOT restated per project: five copies of a 202-line legal
+# document is five things that can drift from each other.
+license = "Apache-2.0"
 requires-python = ">=3.13"
 dependencies = [
     # The specification, rendered as pydantic models -- these generate the

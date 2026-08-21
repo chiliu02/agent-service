@@ -4,7 +4,7 @@ requires-python = ">=3.13"
 
 [[package]]
 name = "agent-service-codex-python"
-version = "0.0.19"
+version = "0.19.0"
 source = { editable = "." }
 dependencies = [
     { name = "agent-spec", extra = ["db"] },

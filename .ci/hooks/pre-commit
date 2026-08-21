@@ -18,7 +18,7 @@
 # that is a stash around the run -- which can lose work when the hook or the
 # stash pop fails, and would be a bad trade for a check this cheap. So it tests
 # the WORKING TREE, and the case where that differs is worth knowing: edit a
-# published `impl/*/schema/` file and DON'T stage it, and this blocks a commit that is
+# published `spec/database/` file and DON'T stage it, and this blocks a commit that is
 # itself fine. That is arguably right -- the file is wrong on disk either way --
 # but it will not be obvious in the moment, so it is written down here.
 #

@@ -55,14 +55,17 @@ consequence is that priority is now mostly a choice rather than a queue.
 
 ### Open
 
+**Nothing.** `0.19.0` was cut on 2026-08-19 and both sides are green against it.
+
 | # | Item | Blocked on |
 |---|---|---|
-| 9 | Cutting `0.19.0` — **the first release** | **the user's decision, and nothing else is left.** Everything that needed no permission is done, and everything that needed permission and was given it is done: the three additions (`mcp.tool_call`, the `422` `ValidationProblem`, `PrebootSpec.runs_as`), the guides, the `spec/` restructure, both Maven artifacts published under their new coordinates, and three snapshot images built, verified against their tags and pushed. **Agent Harness is green on all of it** — 32 of 32 against the artifact, then **50 of 50 against each of the three images with nothing ignored**, which is the first time their live half has run at all. Their words: *cut when you are ready.* What remains is [`versioning.md`](./versioning.md) §4 steps 1–10, then release images from the tag via `.ci/images.py`. The release notes are drafted at [`docs/release-notes-0.19.0.md`](./release-notes-0.19.0.md), which is what §4 step 5 consumes |
+| — | — | — |
 
 ### Closed
 
 | # | Item | |
 |---|---|---|
+| ~~9~~ | ~~Cutting `0.19.0`~~ | **cut 2026-08-19** — tag `release-0.19.0` at `979450d`, `agent-service-openapi:0.19.0` in `maven-releases`, three images at `0.19.0`. Agent Harness moved its four constants, dropped `.changing()`, and reports **547 passed, 0 failed** with AS-24 green on all three. **The cut found two defects in its own procedure**, both now enforced rather than written down: `freeze` refuses a bare version whose implementation versions the registry already holds, and the capabilities-example scan no longer confuses two versions that are the same string |
 | ~~13~~ | ~~`gemini-python` published five `token_usage` nulls on every turn~~ | **fixed 2026-08-15** and built as `0.0.6`, the day after the consumer reported it — the mapper had never been written, and the fake agent's fixture was consistent with the bug. `GP-60` — [below](#13-gemini-python-published-five-token_usage-nulls-on-every-turn--fixed-2026-08-15) |
 | ~~12~~ | ~~A conversation cannot be rendered from the document alone~~ | **done 2026-08-14.** `content` described and filled by all three; `type` documented as authoritative and the SSE frame name explicitly NOT contract. `CX-56`. Three documents regenerated, **computed core unchanged** — [below](#12-a-conversation-cannot-be-rendered-from-the-document-alone--done-2026-08-14) |
 | ~~3~~ | ~~The web console (Plan 6)~~ | **closed 2026-08-14 as a dev tool** — rehydration done, disconnect decided, injection audited live, and a cost display that printed `$0.0000` for *cannot price* fixed — [below](#3-the-web-console--plan-6--closed-2026-08-14-as-a-dev-tool) |
@@ -386,7 +389,7 @@ from Python — a TypeScript port already exists on `docs/typescript-effect-port
 
 Reasoning: [`plans.md` Plan 8](./plans.md#plan-8--multi-implementation-platform).
 Target tree, the couplings, and the full argument for each step:
-`docs/plan-8-design.md` (removed 2026-08-19; in `git log`). **The checklist below is the work; that
+`docs/plan-8-design.md` (removed 2026-08-19; not carried in this repository). **The checklist below is the work; that
 document is why.**
 
 Two decisions taken (user): **monorepo with `spec/` promoted out** of the
@@ -598,7 +601,7 @@ they are what makes the sequence non-obvious:
         2026-08-08, hours after the sentence above them was written. They are
         `StoredEvent` and neighbours, and **persistence is a feature of
         `agent-service`, not of the agent SDK** (user, 2026-08-07;
-        `docs/history/plan-9-design.md` (removed 2026-08-19; in `git log`) §1). The Claude SDK has no
+        `docs/history/plan-9-design.md` (removed 2026-08-19; not carried in this repository) §1). The Claude SDK has no
         database either. They return the moment `codex-python` builds it, which
         is what Plan 9 exists to make cheap — so **this number must not be spent
         as evidence about the core boundary.**
@@ -613,7 +616,7 @@ they are what makes the sequence non-obvious:
 
       **RE-MEASURED after 0.18.0 and after `codex-python` gained persistence, and
       the proposal is written** (2026-08-08):
-      `spec/draft/as-24-core-and-extension.md` (removed 2026-08-19; in `git log`).
+      `spec/draft/as-24-core-and-extension.md` (removed 2026-08-19; not carried in this repository).
       **It inverts what the step assumed.** The delta against
       `spec/0.18.0/openapi-0.18.0.json` is **28 leaves only in the
       published document, 7 only in the served one, 19 differing — and all 19
@@ -1403,7 +1406,7 @@ the `freeze` stage is unchanged and no image is implicated. Seven tests, four
 shared and three in the build.
 
 **The original argument is kept below.** Full argument, with the model shapes read
-from ACP's official Python SDK: `docs/history/acp-review.md` (removed 2026-08-19; in `git log`) §8. Summary,
+from ACP's official Python SDK: `docs/history/acp-review.md` (removed 2026-08-19; not carried in this repository) §8. Summary,
 because both are ours and both are the failure AS-32 exists to prevent:
 
 - **`subtype`, `stop_reason` and `terminal_reason` are three free-form strings
@@ -1819,7 +1822,7 @@ the CLI but sends no prompt, so almost the whole contract is verifiable for
 id). Only the clauses about turns cost money, and those carry the existing
 `live` marker.
 
-See the 0.5.1 conformance write-up (removed 2026-08-19; in `git log`) for the clause-by-clause map.
+See the 0.5.1 conformance write-up (removed 2026-08-19; not carried in this repository) for the clause-by-clause map.
 
 - [x] Harness + free tier — `spec/conformance/`, skipped unless
       `AGENT_SERVICE_TEST_BASE_URL` points at a running service.
@@ -2159,7 +2162,7 @@ Recorded so they are not rediscovered as gaps.
   (2026-08-06, user decision) and have been removed from the documents, along
   with `router-stack-evaluation.md`. Plan 7 had already been rejected on
   2026-07-31. See the note at the top of [`plans.md`](./plans.md); the full text
-  of both is in `git show b7be5fc:docs/plans.md`.
+  of both is in the pre-publication history.
 - **Idle accounting uses wall clock**, not monotonic. A clock adjustment can only
   make the reaper fire early or late — not corrupt anything — and `created_at` /
   `last_used_at` are client-facing and *should* be wall-clock. Noted, not a

@@ -151,10 +151,15 @@ class Run(Base):
     # rather than UUID so the column holds exactly what the recorder was handed.
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
 
-    # NULL for a one-shot run. Populating this for a session turn needs the
-    # service-side sid, which `AgentSession` does not currently know --
-    # `registry.py` mints it. plan-03 Task 4 wires that; until then session
-    # turns land with NULL here and `sdk_session_id` set.
+    # NULL for a one-shot run, and ONLY for that: it is never registered, so it
+    # has no service-side sid and no `sessions` row to reference. A session turn
+    # always fills this -- every implementation passes its sid to `start_run`.
+    #
+    # THE READ PATH DEPENDS ON IT, which is what makes NULL here a defect rather
+    # than a gap: a session's transcript is `events` joined through `runs` and
+    # filtered on this column, so a turn recorded without it is a turn no
+    # transcript can show. Worth knowing because the failure is silent -- an
+    # empty page, not an error.
     session_id: Mapped[str | None] = mapped_column(
         String(64), ForeignKey("sessions.id", ondelete="CASCADE"), index=True
     )

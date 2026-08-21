@@ -3,8 +3,13 @@
 # Tail matches IMPLEMENTATION_NAME and the directory, family matches
 # agent-service-claude-python and agent-service-conformance.
 name = "agent-service-codex-python"
-version = "0.0.19"
+version = "0.19.0"
 description = "HTTP access to the OpenAI Codex SDK, satisfying the agent-service specification."
+authors = [
+    { name = "Chi Liu" }
+]
+# SPDX expression, PEP 639. Text in the repository's root `LICENSE`.
+license = "Apache-2.0"
 requires-python = ">=3.13"
 dependencies = [
     # The specification as pydantic models -- shared, not copied. AS-24

@@ -180,5 +180,6 @@ Probes go in `spike/` and are written up as numbered entries, each with its own
 **One level up**, because they are the platform's:
 `../../docs/ci.md`, `../../docs/plans.md`, `../../docs/dev-todo.md` (read its
 "Do not 'fix' these" section first), `../../docs/open-questions.md`,
-`../../docs/security-posture.md`, and the contract and outbox at `../../spec/`
-and `../../docs/to-agent-harness/`.
+`../../docs/security-posture.md`, and the contract at `../../spec/`. The outbox
+is at `../../docs/to-agent-harness/` — tracked in the development
+repository, and removed by the export that builds the public one.

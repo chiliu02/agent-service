@@ -776,7 +776,17 @@ def test_the_published_document_embeds_no_version_that_moves_under_it() -> None:
             f"moves on the implementation stream cannot sit in an artifact "
             f"that gets frozen."
         )
-    assert IMPLEMENTATION_VERSION not in json.dumps(example), (
+    # **A BLANKET SUBSTRING SCAN, and it needs one exemption since 0.19.0.**
+    # The loop above pins each field that must be a placeholder; this catches a
+    # version that reached the example by some path nobody thought of.
+    #
+    # It cannot distinguish two versions that are the same STRING, and at 0.19.0
+    # they are: all three implementations were set to the document's number, so
+    # `spec.document_version` legitimately carries it. That field belongs in a
+    # frozen document -- it is what the document IS -- so the scan runs over the
+    # example with it removed rather than being deleted for being inconvenient.
+    scanned = {k: v for k, v in example.items() if k != "spec"}
+    assert IMPLEMENTATION_VERSION not in json.dumps(scanned), (
         "this build's version is somewhere in the published example"
     )
     # The one version that BELONGS there: it moves with the document itself.

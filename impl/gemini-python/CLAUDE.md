@@ -2,7 +2,7 @@
 
 **The third implementation, and it serves the specification.** The target is
 **Gemini CLI headless**, driven from Python — no SDK exists, and the agent is a
-Node program this service spawns (`GP-41`). All fourteen `/v1` operations are
+Node program this service spawns (`GP-41`). All thirteen `/v1` operations are
 built, the image builds and boots, and the platform's conformance suite runs
 against it in CI: **78 passed, 4 skipped, 0 failed**, with the shared core over
 three documents losing **zero** leaves.
@@ -226,7 +226,7 @@ the binary disagree, the binary wins. It has been wrong twice so far (`GP-22`,
 
 - `src/agent_service/` — **twelve modules**, and the split is by what each one
   answers to:
-  - `api.py` — all fourteen `/v1` operations. **The document is generated from
+  - `api.py` — all thirteen `/v1` operations. **The document is generated from
     it**, so a function name, a tag and a declared response are contract, not
     style.
   - `cli.py` — `CliRunner`, the argv and environment for a turn, the exit-code
@@ -322,7 +322,7 @@ condition of every non-snapshot release. It describes what was built rather than
 what was planned, which is why it waited for the code.
 
 **Nothing is delivered, and delivering is the user's call** — an image tag, a
-`spec/releases/` directory or a bare `spec/VERSION` all need asking, and
+a `release-<version>` tag or a bare `spec/VERSION` all need asking, and
 `../../docs/versioning.md` is why. The one thing owed to the consumer on the day
 this ships is `allow_supplied_sdk_session_id: false` (`GP-34`), which the other
 two builds do not share.

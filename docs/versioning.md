@@ -1,9 +1,19 @@
 # Versioning and publishing
 
-**Three version streams, two kinds of directory, one irreversible act.** This
-file exists because every rule below was learned by getting it wrong once, and
+**Three version streams, one snapshot, and three irreversible acts.** This file
+exists because every rule below was learned by getting it wrong once, and
 because the cost of a mistake here is asymmetric: an internal number costs
 nothing to change and a published one cannot be changed at all.
+
+The three that cannot be taken back, in ascending order of reach: **a release
+tag** ([§4](#4-cutting-a-release)), **a published image or Maven artifact**
+([§5](#5-publishing-an-image)), and **a push to the public repository**
+([§4a](#4a-exporting-to-the-public-repository)). All three need asking; see
+[§3](#3-what-needs-permission-and-what-does-not).
+
+It said "two kinds of directory" until 2026-08-21, which had been wrong since
+2026-08-19: there are no version directories at all now. `spec/` holds one
+version and every released one is a tag.
 
 Written 2026-08-09, after 0.18.0 was frozen mid-iteration by an image
 announcement — [§6](#6-the-mistake-that-produced-this-file) is that story.
@@ -45,8 +55,8 @@ revision; neither can be derived from the other, so it publishes both:
 
 | Where | What it says | Authority |
 |---|---|---|
-| `agent-service-openapi` — the pre-boot command | `document_version` **and** `schema_revision` | **yes** — the same constants the code enforces |
-| image labels — `docker inspect` | `com.npf.agent-service.document-version`, `.schema-revision`, `.impl` | a copy, pinned by the `container` stage's label check |
+| image labels — `docker inspect` | `com.npf.agent-service.document-version`, `.schema-revision`, `.impl` | **yes, since 0.19.0** — pinned by the `container` stage's label check, and the entry point now that no command prints these |
+| `components.schemas.PrebootSpec` in that build's document | the pre-boot facts, every value `const`-pinned | **yes** — the same constants the code enforces |
 | the availability note | image, digest, what moved | the human record |
 
 **Not the tag, and not the OpenAPI document.** A tag can never be corrected once
@@ -101,7 +111,7 @@ reachable only through its tag.
 
 | State | Where | Editable | Permission |
 |---|---|---|---|
-| in flight | `spec/openapi-<version>-snapshot-<impl>.json` | **yes**, freely | none needed |
+| in flight | `spec/openapi/<impl>-<version>-snapshot.json` | **yes**, freely | none needed |
 | cut | the same files, bare, in one commit | no | **ask** |
 | released | `release-<version>` | **never** | **ask** |
 
@@ -124,17 +134,26 @@ is now the whole of what `freeze` guards on the document stream.
 
 **The eighteen are not releases under this process.** `0.19.0` is the first, and
 Agent Harness depends on `>= 0.19.0` from now on (user, 2026-08-19). Their
-documents are in `git log` and are not carried in the working tree.
+documents are not carried in the working tree, nor in this repository’s history.
 
 ## 3. What needs permission, and what does not
 
 **Ask before**: moving `spec/VERSION` to a bare number, **creating or pushing a
 `release-<version>` tag**, moving any `pyproject.toml` version, building or
-tagging an image, publishing a Maven artifact, and writing anything into
-`docs/to-agent-harness/`.
+tagging an image, publishing a Maven artifact, writing anything into
+`docs/to-agent-harness/`, and **pushing anything to the public repository**
+([§4a](#4a-exporting-to-the-public-repository)).
+
+**The public push is the least reversible act in this file.** A tag can at least
+be reasoned about; a commit that reaches a public GitHub repository can be
+cloned, forked and indexed within minutes, and deleting it afterwards removes it
+from exactly one of those places. Building the `public` branch locally needs no
+permission — it is inspectable and costs nothing. Pushing it does.
 
 **No permission needed**: creating or changing a `-snapshot` document, and
-anything under `spec/draft/`.
+unagreed work anywhere under `docs/`. (It used to say `spec/draft/`; that
+directory went with the rest of the version directories on 2026-08-19, and
+`spec/` is now `openapi/`, `database/` and `conformance/` and nothing else.)
 
 **A tag is the most permanent thing in this repository, so it is the most gated.**
 An image tag can at least be superseded by a new one; a release tag *is* the
@@ -169,7 +188,24 @@ they want it — because that is what the snapshot is for.
 2. **Set the version in all four places it is written**: `spec/VERSION`,
    `DOCUMENT_VERSION` in every implementation's `versions.py`, and
    `com.npf.agent-service.document-version` in every implementation's
-   `Dockerfile`. The label is a hand-written copy, so it moves in the same commit
+   `Dockerfile`. **And bump every implementation's own version too** —
+   `pyproject.toml` and `IMPLEMENTATION_VERSION` — because the release images are
+   built from this commit and an image tag is never reused.
+
+   **`freeze` fails the cut if you forget**, since 2026-08-19: while
+   `spec/VERSION` is bare it refuses any implementation version the registry
+   already holds as an image. So this is caught at step 7 — before the tag —
+   rather than at step 9 by `.ci/images.py`, which is where it was caught the
+   first time and is four steps and one irreversible tag too late.
+
+   **This step did not say that until 0.19.0 was cut, and the cut is where it was
+   found.** The tag carried the same implementation versions as the snapshot
+   images already in the registry, so release images built from it would have had
+   to push tags that were taken. `.ci/images.py` refused, which is the guard
+   working; the procedure was what was wrong. **0.19.0 set all three
+   implementations to `0.19.0`** (user), which is an alignment at one release
+   rather than a merging of the streams: a later build-only change still moves an
+   implementation number on its own. The label is a hand-written copy, so it moves in the same commit
    or not at all — the `container` stage compares it against the document, but
    only once an image exists, which is too late. The **schema** label moves on
    its own stream and is untouched by a document cut.
@@ -215,7 +251,7 @@ they want it — because that is what the snapshot is for.
    Then commit the completed row and **push the tag**. A tag that exists only
    locally is not a release.
 9. **Build every artifact from the tag**, from a clean checkout of it rather than
-   from the working tree — `git worktree add ../cut release-<version>` is the
+   from the working tree — `git worktree add temp/cut release-<version>` is the
    cheapest way to be sure. §5 is the image half; the two Maven packages are the
    same rule.
 10. **Bump main to the next snapshot**, immediately and in its own commit:
@@ -227,6 +263,149 @@ they want it — because that is what the snapshot is for.
     **The next number is a decision, not a formula.** The next minor is the
     default; a breaking change or a patch is the user's call.
 
+## 4a. Exporting to the public repository
+
+**This repository is published at `github.com/chiliu02/agent-service`, and it is
+NOT this history** (user, 2026-08-21). The public repository is built from the
+orphan **`public`** branch, which carries **two commits**. **Never push `main`
+there.**
+
+| | `main` — here and on `gitea` | `public` → GitHub `main` |
+|---|---|---|
+| history | full | orphan, two commits |
+| `docs/to-agent-harness/` | **tracked** | absent |
+| `spec/README.md` manifest | `979450d…` | `1666f74…` |
+| `release-0.19.0` resolves to | `979450d` | `1666f74` |
+
+**The outbox is tracked here on purpose and removed by the export.** It is the
+record of how this specification was negotiated, and this is where that record
+lives; what keeps it out of a public tree is that the threads carry the
+*consumer's* estate — registry addresses, a Maven host, compose paths on their
+machines. Gitignoring it here was tried for one afternoon and reverted: a new
+thread would silently never be committed, and the record would stop growing with
+nobody noticing. **The removal is a step in publishing, not a property of this
+tree.**
+
+### Two tags with one name, and both are correct
+
+`release-0.19.0` resolves to a different commit in each repository, and **this is
+not a defect to be repaired.** `freeze` reads the manifest row from the working
+tree and resolves the tag in whatever repository it is running in, so each
+history names the commit it actually contains, and the check passes on both.
+
+**What the tag guarantees is unchanged, and it was verified rather than
+asserted**: `spec/` is byte-identical at both — `git diff` empty across the
+directory, plus a per-file sha256 comparison of the four documents and
+`VERSION`. That identity is the entire justification for the arrangement. What
+differs at the public commit is outside `spec/`: no outbox, no `.mcp.json`, host
+paths parameterised, `LICENSE` and `NOTICE` added.
+
+**Artifacts published before 2026-08-21 were built from the original commit**,
+which the public repository does not contain. A consumer verifying provenance
+against the public tag finds the same `spec/` under a different hash. Say so if
+it ever comes up; do not move either tag to make them agree.
+
+### Routine update — new work on `main`, no new release
+
+Commit 1 does not move. Rebuild commit 2 only:
+
+```bash
+git checkout public
+git read-tree -u --reset main          # commit 2's tree becomes main's
+git rm -r --cached docs/to-agent-harness
+# re-add the outbox line to .gitignore on THIS branch only
+# re-set the manifest row in spec/README.md to commit 1's hash  <-- SEE BELOW
+git commit --amend                     # keep it at two commits
+git push --force-with-lease github public:main
+```
+
+**`read-tree --reset` reverts everything, including anything that exists only on
+this branch** — which is the whole point of it, and the trap. There is **exactly
+one** such thing by design, and it must be re-applied every single time:
+
+| Re-apply after every `read-tree` | Why it cannot live on `main` |
+|---|---|
+| **the whole released-versions block in `spec/README.md`** — the `release-<version>` row **and** the paragraph under it explaining that the tag names this history's root | the row names *this* history's commit and `main`'s correctly names a different one; the paragraph says "its commit is the root of this history", which is true there and false here |
+
+**It is the block, not the row.** The hash and the note that explains it are one
+edit — the second export re-applied the hash, read the diff, and caught the
+paragraph being dropped. A hash with no explanation is worse than either half:
+it is the exact thing a reader would otherwise report as a defect.
+
+**Keep that list at one entry.** Anything else that turns out to differ belongs
+on `main` instead, and the fix is to put it there rather than to lengthen this
+table. That is not hypothetical: the first routine export silently reverted the
+GitHub issue-template URLs, which had been edited on `public` alone and should
+have been on `main` from the start. **A regression here is invisible** — the
+export still builds, the stages still pass, and the wrong file is published.
+
+**So diff the export against its predecessor before amending**, and read every
+non-outbox path in it:
+
+```bash
+git diff --cached --name-status | grep -v to-agent-harness
+```
+
+Every line should be a change you made on `main` and intended to publish. A
+`spec/README.md` in that list is expected; anything you do not recognise is the
+trap above.
+
+**`--force-with-lease`, never a bare `--force`.** Amending rewrites the tip, so
+the push is non-fast-forward by construction; the lease is what stops it
+clobbering something pushed from elsewhere.
+
+### After a cut — rebuild both commits
+
+1. `git checkout --orphan public <release-tag>` — commit 1 is the release tree.
+2. Remove `docs/to-agent-harness/` and `.mcp.json` from the index, apply the
+   host-path scrubs, add `LICENSE` and `NOTICE`. **Verify `spec/` still matches
+   the tag byte for byte** before committing — `git diff --stat <tag> -- spec/`
+   must be empty. Commit, then tag it locally as `public-release-<version>`.
+3. `git read-tree -u --reset main` for commit 2, set the manifest row in
+   `spec/README.md` to commit 1's **new** hash, commit.
+4. **Verify in a throwaway clone**, and this step is not optional — see below.
+5. Push:
+
+   ```bash
+   git push github public:main
+   git push github public-release-<v>:refs/tags/release-<v>
+   ```
+
+   Git renames the tag on push, which is what keeps the local
+   `release-<v>` — pointing at this history's own commit — intact.
+
+### `freeze` cannot pass on `public` in this working tree
+
+The manifest on that branch names the public commit while the local
+`release-<version>` tag legitimately points at this history's. **That is the
+arrangement working, not a failure**, so verify the export the only way that
+means anything — a clone with only that branch, with the tag created under its
+real name:
+
+```bash
+git clone --branch public --single-branch . /tmp/pubclone
+cd /tmp/pubclone
+git tag -d release-<v>; git tag -a release-<v> -m "<v>" <commit-1-sha>
+uv run --no-project python .ci/ci.py            # all six stages
+```
+
+That is exactly what a consumer and the GitHub workflow see. Run the **full**
+runner, not `--fast`: the container and gates stages are the half that proves the
+images still build from the exported tree.
+
+### Two gotchas that cost time
+
+**`git checkout --orphan <tag>` writes the tag's OLD directory layout** into the
+working tree alongside the current one. The outbox was reorganised into
+`0.19.0/` after `release-0.19.0`, so this left 68 stale duplicates at the outbox
+root — invisible to a file count, which looked plausible. **Diff the on-disk
+paths against `git ls-tree main`**, not the totals, and delete only what is
+absent from `main` and recoverable from the tag.
+
+**There is no SSH key for GitHub on this host** — the only key is
+`harness_e5470`, for gitea. The `github` remote is HTTPS and authenticates
+through Git Credential Manager as `chiliu02`.
+
 ## 5. Publishing an image
 
 **Built from the release tag, from a clean checkout of it** (user, 2026-08-19) --
@@ -234,9 +413,14 @@ not from the working tree, and not from main. An image built from a dirty tree
 claims to be a release and is not one, and nothing in its labels would say so.
 
 ```bash
-git worktree add ../cut release-<version>
-cd ../cut && docker build ...
+git worktree add temp/cut release-<version>      # INSIDE the repository
+uv run --no-project python .ci/images.py --push  # run from temp/cut
 ```
+
+**`temp/cut` and never `../cut`.** A sibling directory is outside
+`agent-service/`, and the boundary rule in `CLAUDE.md` does not carve out an
+exception for a worktree of this same repository. `temp/` is gitignored, so the
+checkout leaves no trace in `git status` either.
 
 **This is what pairs the streams.** An image already publishes the document
 version and the schema revision it was built against; building it from the tag is

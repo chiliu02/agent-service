@@ -16,6 +16,14 @@
 name = "agent-service-conformance"
 version = "0"
 description = "The acceptance suite for the agent-service HTTP specification"
+authors = [
+    { name = "Chi Liu" }
+]
+# SPDX expression, PEP 639. Text in the repository's root `LICENSE`. Declared
+# even though this project is never built or published: the suite is the part
+# of the repository an outside implementer is most likely to lift, so the terms
+# it travels under should be legible from the file itself.
+license = "Apache-2.0"
 requires-python = ">=3.13"
 dependencies = []
 

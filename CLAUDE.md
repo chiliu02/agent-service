@@ -5,7 +5,7 @@ THREE implementations.** `agent-service` fronts a **local coding agent** over
 HTTP. Each implementation is a separate build rather than a mode of another, and
 what generalises is the specification, the conformance suite and
 `/v1/capabilities`; the code does not.
-`docs/plan-8-design.md` (removed 2026-08-19; in `git log`) is the structure and the
+`docs/plan-8-design.md` (removed 2026-08-19; not carried in this repository) is the structure and the
 migration, [`docs/plans.md`](./docs/plans.md) Plan 8 is why.
 
 **The third build is what tested the claim, and it held.** Adding
@@ -44,17 +44,29 @@ spec/conformance/        the suite that judges a build against the specification
 impl/claude-python/      the Claude Agent SDK build. The only one DELIVERED
 impl/codex-python/       the OpenAI Codex SDK build
 impl/gemini-python/      Gemini CLI headless, spawned per turn -- no SDK exists
-impl/common/agent-spec/  the shared models. Names no build, and must not
+impl/common/agent-spec/  the shared models AND the database layer. Names no
+                         build, and must not
+impl/common/db/          the Alembic tree -- the GENERATOR of spec/database/,
+                         and operator tooling: no image ships it
+impl/common/web/         the dev console. A tool, not a deliverable
 docs/                    platform-level: ci, versioning, plans, dev-todo, open questions,
-                         security posture, capability divergence, running locally,
-                         and the Plan 8 migration
+                         security posture, capability divergence, database model,
+                         running locally, deploying remotely
 impl/<build>/docs/       that build's OWN documents, beside its code (user,
                          2026-08-10): the consumer guide, and the references file
                          that is the only document its code may cite. They lived
                          under docs/<build>/ for a day and came back
-docs/to-agent-harness/   the outbox (see The channel, below)
+docs/to-agent-harness/   the outbox (see The channel, below). Tracked in the
+                         DEVELOPMENT repository and removed by the export that
+                         builds the public one -- it names a third party's
+                         estate. Absent if you are reading this on GitHub
 .ci/ci.py                ONE runner. `uv run --no-project python .ci/ci.py`
+.ci/bundle.py            builds the two Maven artifacts from a release tag
+.ci/images.py            builds and tags the three images. Both are RELEASE
+                         tooling: neither is a stage, and neither runs in CI
 .ci/hooks/pre-commit     core.hooksPath target -- see below
+.github/                 workflow + templates. Runs `--fast` only: the container
+                         stages are minutes of runner time and stay local
 ```
 
 **This file is platform-level: the boundary, the channel, and how the CI is
@@ -68,8 +80,8 @@ are working in**, and it outranks nothing here:
 ## Commands
 
 ```bash
-uv run --no-project python .ci/ci.py          # ALL of it: freeze, links, unit, container, gates
-uv run --no-project python .ci/ci.py --fast   # ... freeze + links + unit only, no Docker at all
+uv run --no-project python .ci/ci.py          # ALL of it: freeze, links, references, unit, container, gates
+uv run --no-project python .ci/ci.py --fast   # ... the first four only, no Docker at all
 ```
 
 **`--no-project`, and it is not optional.** The platform root is not a uv
@@ -220,15 +232,20 @@ it. Read it before touching a version or an image. What follows is the rule
 itself.
 
 **Snapshots are yours; releases are the user's.** The rule is the **`-snapshot`
-suffix**, not the parent directory — eighteen frozen releases already live under
-`spec/` from before `spec/releases/` existed, and they stay there.
+suffix**, and it is a suffix on a FILENAME — there are no version directories.
+`spec/` holds three directories, one per kind of artifact (`openapi/`,
+`database/`, `conformance/`), and exactly one version: whatever `spec/VERSION`
+says. Every earlier release lives in its `release-<version>` tag and nowhere in
+the working tree.
 
 | | Permission |
 |---|---|
-| `spec/<version>-snapshot/` — never frozen, replaced at will | **none needed.** Iterate freely |
-| `spec/releases/<version>/` — frozen from the moment it exists. **Empty today** | **ask, every time** |
-| Moving `spec/VERSION` to a bare number, or any `pyproject.toml` version | **ask** |
-| Building or tagging an image | **ask** |
+| `spec/openapi/<impl>-<version>-snapshot.json` — never frozen, regenerate at will | **none needed.** Iterate freely |
+| Renaming those to a bare version, or moving `spec/VERSION` to one | **ask, every time** |
+| **Creating or pushing a `release-<version>` tag** | **ask.** THE TAG IS THE FREEZE — this is the most gated thing here, because a tag is the one thing that cannot be superseded, only moved |
+| Adding a row to `spec/README.md`'s released-versions table | **ask** — the row *is* the claim that a version was delivered, and `freeze` checks it on every run |
+| Any `pyproject.toml` version | **ask** |
+| Building or tagging an image, or publishing a Maven artifact | **ask** |
 
 **Agent Studio may test a snapshot** (user, 2026-08-09), so `spec/` is
 visible to them — it is simply never frozen. Testing before cutting is how a defect
@@ -298,6 +315,23 @@ in this repo they read, and writing there is not a violation — it is inside
 this directory. They read it where it sits; you still do not copy anything
 anywhere.
 
+**It is tracked HERE and removed by the export, and the rule above is
+unchanged** (user, 2026-08-21). This repository is public at
+`github.com/chiliu02/agent-service`, and the outbox is not in it — the threads
+carry *their* internal infrastructure (registry addresses, a Maven host,
+compose paths on their machines), and a provider does not publish a consumer's
+estate.
+
+**But the removal is a step in publishing, not a state of this tree.** The
+export builds a separate two-commit history on the `public` branch and drops the
+outbox there. Ignoring it here instead was tried and is wrong twice over: a new
+thread would silently never be committed, and the private record — which is the
+whole point of keeping it — would stop growing with nobody noticing.
+
+**So keep writing replies there exactly as before, and keep committing them.**
+Nothing about "writing to the outbox is publishing" below is softened: they
+still read it where it sits.
+
 **The two paths are mirror images, and that is the point of the shape.** Each
 side keeps the other's mailbox under its own `docs/`, named for the recipient —
 so a path says which repository it is in *and* which direction it flows, and
@@ -327,8 +361,11 @@ So a reply keeps the base name of the document it answers and adds the next
 number. Do not invent a new base name for a reply — a new base name starts a new
 thread, which is what you do when raising something rather than answering.
 
-Still true: produce deliveries in `spec/<version>/` and unagreed work in
-`spec/draft/`. The outbox is for correspondence — asks, replies,
+Still true, in the shape `spec/` has now: a delivery is a `release-<version>`
+tag, and **unagreed work does not go in `spec/` at all** — `spec/draft/` was
+removed with the rest of the version directories on 2026-08-19, and `spec/`
+holds only `openapi/`, `database/` and `conformance/`. Unagreed work is a
+`docs/` document until it is agreed. The outbox is for correspondence — asks, replies,
 corrections — and Studio's inbox README states the rule its own side follows,
 which is worth matching: **every link in a document there resolves inside that
 directory**, so a reader holding only the folder never hits a dead end. Name

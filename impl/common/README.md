@@ -37,7 +37,7 @@ is being smuggled in.
 **What is still forbidden**, and this half of the old rule stands: no shared
 base classes for the SDK layer, no "just this one helper" that happens to be
 useful twice, no common package a fourth implementation in another language
-could not use. `plan-8-design.md` step 7 still applies — *sharing a language is
+could not use. Plan 8 step 7 still applies — *sharing a language is
 not a licence to share code* — it just is not the whole rule.
 
 **What generalises lives in `spec/`**, and it is the specification, the
@@ -131,9 +131,9 @@ distinction ever stops being obvious, the question to ask is the rule above: doe
 a running service import it? The answer must stay no.
 
 **The artifact is NOT here.** The rendered DDL is published at
-`spec/snapshots/schema/agent-service-<revision>.sql`, beside the OpenAPI documents,
+`spec/database/agent-service-<revision>.sql`, beside the OpenAPI documents,
 because it is what a consumer is handed. This directory holds the generator. Same
-split as `dump-schema.py` and `spec/snapshots/openapi/`.
+split as `dump-schema.py` and `spec/openapi/`.
 
 ### `db/init/` — SQL, and language-neutral by construction
 

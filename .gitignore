@@ -53,9 +53,34 @@ impl/*/\.venv
 # TRACKS. Ignoring these would take a `git rm --cached -r .idea` as well, which
 # removes them from every other clone -- a decision, not a tidy-up.
 
-# Developer-local MCP servers -- see the note on the current branch.
+# Developer-local MCP servers. `.mcp.json` pointed at a PyCharm MCP endpoint on
+# a fixed loopback port, which is one developer's IDE session and not the
+# repository's -- it resolves to nothing in any other clone. Untracked
+# 2026-08-21, when this repository was prepared for publication. Keep your own;
+# it will not be committed.
 .mcp.json
 
-# The outbox: correspondence with the consumer. Not published; it carries a
-# third party's internal infrastructure.
+# `docs/to-agent-harness/` -- the outbox -- IS TRACKED HERE, ON PURPOSE, and
+# that is why there is deliberately no pattern for it (user, 2026-08-21).
+#
+# It is the record of how this specification was actually negotiated, and this
+# repository is where that record belongs. What it must not do is reach the
+# PUBLIC repository, because the threads carry the consumer's estate --
+# registry addresses, a Maven host, compose paths on their machines -- and a
+# provider does not publish those.
+#
+# **So the removal belongs to the export, not to this tree.** Publishing builds
+# a separate two-commit history on the `public` branch, and dropping the outbox
+# is a step there. Ignoring it here instead would be the wrong place for it
+# twice over: a new thread would silently not be committed, and the private
+# record would stop growing without anyone noticing.
+#
+# The channel rule in CLAUDE.md is unchanged either way: outbound documents are
+# written here, their inbox is read-only, and writing to the outbox is
+# publishing.
+
+# THE OUTBOX IS NOT PUBLISHED, and this line exists only on the `public` branch.
+# On the development branch it is tracked -- see docs/versioning.md §4a. The
+# threads carry the consumer's estate (registry addresses, a Maven host, compose
+# paths on their machines), which is not ours to publish.
 docs/to-agent-harness/

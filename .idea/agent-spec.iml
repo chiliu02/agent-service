@@ -5,6 +5,7 @@
       <sourceFolder url="file://$MODULE_DIR$/impl/common/agent-spec/src" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/impl/common/agent-spec/.venv" />
     </content>
+    <orderEntry type="jdk" jdkName="~\Workspace\wrk\intellij\python\agent-service\impl\common\agent-spec\.venv" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
   </component>
 </module>

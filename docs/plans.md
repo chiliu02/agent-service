@@ -9,7 +9,7 @@ One file, consolidated 2026-07-31 from eight — `plan-01-core-service.md`,
 so its own text is still the working document. Plans 1–4 are **summarised**: they
 shipped, and their originals were largely full code listings written to be
 implemented from, which the code and its tests now supersede. Nothing is lost —
-`git log docs/plan-*.md` has every original, and the reasoning that outlived them
+the pre-publication history has every original, and the reasoning that outlived them
 was already migrated into
 [`implementation-notes.md`](../impl/claude-python/docs/claude-python-references.md),
 [`spike-findings.md`](../impl/claude-python/docs/claude-python-references.md) and
@@ -21,7 +21,7 @@ path-prefix reverse proxy; Plan 7 was Projects, a metadata layer on top of that
 router, already rejected on 2026-07-31. Both are gone from this file, from
 [`dev-todo.md`](./dev-todo.md) and from the documents that pointed at them, along
 with `router-stack-evaluation.md`, which existed only to choose an implementation
-language for the router. `git show b7be5fc:docs/plans.md` has the full text of
+language for the router. The pre-publication history has the full text of
 both if the question ever comes back.
 
 **The checkboxes had drifted badly and are not reproduced.** Plans 1 and 2 shipped
@@ -43,8 +43,8 @@ is the list to read if you want to know what to do next.
 | [3 — Persistence](#plan-3--persistence) | ✅ shipped | Postgres, Alembic, A.1 + A.2, opt-in |
 | [4 — Container and deployment](#plan-4--container-and-deployment) | ✅ shipped | Dockerfile, compose, measured shutdown/reaping |
 | [6 — Web console](#plan-6--web-console-sketch) | 🟨 sketch; partly overtaken | `impl/common/web/console.html` ships as a dev tool |
-| 9 — Persistence schema becomes the platform's | 🟩 steps 1–4 shipped 2026-08-08; **step 5 needs a version** | DDL at `spec/schema/agent-service-<revision>.sql`, Alembic tree at `impl/common/db/`, `env.py` imports no implementation |
-| [8 — Multi-implementation platform](#plan-8--multi-implementation-platform) | 🟨 steps 1–5 shipped; 7 in progress, 6 now unblocked | `impl/codex-python` is containerised and in CI; AS-24 measured failing, which is what step 6 was waiting for |
+| 9 — Persistence schema becomes the platform's | ✅ shipped; step 5 landed with `0.19.0` | DDL at `spec/database/agent-service-<revision>.sql`, Alembic tree at `impl/common/db/`, `env.py` imports no implementation |
+| [8 — Multi-implementation platform](#plan-8--multi-implementation-platform) | ✅ shipped | All three builds are containerised, in `UNIT_IMPLS` and in `CONTAINER_IMPLS`; step 6 published the document per implementation, which is what took AS-24 to zero failures on all three |
 | 5 — Multi-workspace router | 🚫 **out of scope** (2026-08-06) | removed; see the note above |
 | 7 — Projects | 🚫 **out of scope** (2026-08-06) | removed; had been rejected 2026-07-31 |
 
@@ -339,8 +339,14 @@ settled, task decomposition here would be speculative.
 
 ## Plan 8 — Multi-implementation platform
 
-**Status: designed 2026-08-06, nothing moved.** **Structure and migration worked up in full in `docs/plan-8-design.md` (removed 2026-08-19; in `git log`) (2026-08-07)** — the target directory tree, the three couplings that decide the order, and seven steps each of which ends with `ci.py` green. Read that before moving anything. Two decisions taken (below); the
-sequencing is written down so the first step is not "start moving files".
+**Status: SHIPPED.** Designed 2026-08-06, structure and migration worked up in
+full the next day in `plan-8-design.md` — the target directory tree, the three
+couplings that decided the order, and seven steps each ending with `ci.py`
+green. All seven landed: the tree below is the tree, all three builds are in
+`UNIT_IMPLS` and `CONTAINER_IMPLS`, and step 6 — publishing the document per
+implementation — is what took AS-24 to zero failures on every build. The design
+document was removed on 2026-08-19 once the migration it described was history;
+what follows is the record of what it decided and why.
 
 **The trigger.** `agent-service` is to front Codex, Gemini and other agent SDKs
 as well as Claude's. Those SDKs are not all usable from Python — a TypeScript
@@ -473,7 +479,7 @@ Ordered so nothing breaks Studio, and so the expensive step is last:
    `sdk.name`. The endpoint question is open as
    [Q17](./open-questions.md#q17-how-should-an-llm-provider-endpoint-reach-the-sdk),
    with the measured SDK detail in
-   `spec/draft/llm-provider-and-auth.md` (removed 2026-08-19; in `git log`).
+   `spec/draft/llm-provider-and-auth.md` (removed 2026-08-19; not carried in this repository).
 2. **Promote `spec/`** — move the documents and the conformance suite up,
    leave the Python implementation where it is. No behaviour change; `ci.py`
    learns the new paths. `freeze` follows the documents.

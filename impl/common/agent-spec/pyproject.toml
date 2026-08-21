@@ -10,6 +10,11 @@
 name = "agent-spec"
 version = "0.16.0"
 description = "The agent-service specification, rendered as pydantic models."
+authors = [
+    { name = "Chi Liu" }
+]
+# SPDX expression, PEP 639. Text in the repository's root `LICENSE`.
+license = "Apache-2.0"
 requires-python = ">=3.13"
 # pydantic ONLY, and the guard is unchanged. No FastAPI, no SDK, no database
 # driver. If THIS list ever needs to grow, that is the signal something

@@ -14,11 +14,12 @@ existed twice — a canonical there and a delivery copy elsewhere — with a sha
 table and a byte comparison kept in step for nothing else. This holds one copy
 and there is nothing to compare it against.
 
-**`0.19.0` is the first release, and it is cut.** Eighteen versions were cut
+**`0.19.0` is the first release and it is cut**; `spec/openapi/` now carries
+`0.20.0-snapshot`, because main is always a snapshot. Eighteen versions were cut
 before it under an older process and none of them is a release under this one;
-their documents are in `git log` and are not carried in the working tree. **Agent
-Harness depends on `>= 0.19.0` from now on** (user, 2026-08-19), which is what
-makes that safe.
+their documents are not carried in the working tree, nor in this repository's
+history. **Agent Harness depends on `>= 0.19.0` from now on** (user,
+2026-08-19), which is what makes that safe.
 
 ## The lifecycle
 
@@ -47,8 +48,23 @@ version can change. Git makes the rest impossible.
 
 | Version | Tag | Commit |
 |---|---|---|
+| `0.19.0` | `release-0.19.0` | `1666f74fce11f681294d88352c63f6a3d492a77f` |
 
-*(none yet — `0.19.0` will be the first row, added by the cut.)*
+**`0.19.0` was cut before this repository was published, and its commit is the
+root of this history rather than the one the cut originally produced.** The
+project was developed privately for three weeks; that history is not carried
+here. What the tag guarantees is unchanged and was verified rather than asserted:
+**`spec/` at `release-0.19.0` is byte-identical to what the cut produced** — the
+four documents, the three DDL files, `VERSION` and the conformance suite. What
+differs at that commit is outside `spec/`: the consumer correspondence and one
+developer's machine details were removed, and the licence added, before any of it
+was published.
+
+**The row is written in the commit AFTER the one the tag names**, and it cannot be
+otherwise: it carries the commit's own hash. So the tag's tree does not contain
+its own row, and `freeze` reads the row from the working tree rather than from the
+tag — which is the direction that matters, since what it guards against is the tag
+moving afterwards.
 
 ---
 

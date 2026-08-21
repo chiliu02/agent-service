@@ -1,7 +1,7 @@
 """Everything this repository can check for free, in one command.
 
-    uv run python .ci/ci.py            # all five stages
-    uv run python .ci/ci.py --fast     # freeze + links + tests, no Docker
+    uv run python .ci/ci.py            # all six stages
+    uv run python .ci/ci.py --fast     # freeze + links + references + unit, no Docker
     uv run python .ci/ci.py --stages freeze,container
     uv run python .ci/ci.py --serial-unit   # unit suites one at a time, streaming
 
@@ -421,11 +421,10 @@ BOOT_GATES = "test_boot_gates.py"
 #: The Alembic tree, which since Plan 9 step 2 belongs to no implementation.
 #:
 #: **It is the GENERATOR, not the artifact.** The DDL it renders is published at
-#: `schema/` beside the OpenAPI documents, because persistence is
+#: `spec/database/` beside the OpenAPI documents, because persistence is
 #: a feature of `agent-service` rather than of any agent SDK and a consumer is
-#: told to apply it (`docs/to-agent-harness/image-0.10.0-available.md`: *"Apply
-#: out of band, as D-11 requires: `alembic upgrade head`"*). The tree that
-#: produces it is operator tooling, like `psql` -- **no implementation imports
+#: told to apply it out of band, as D-11 requires: `alembic upgrade head`. The
+#: tree that produces it is operator tooling, like `psql` -- **no implementation imports
 #: it at runtime**, and the images ship neither it nor `alembic.ini`, which is
 #: what the 0.10.0 revision gate exists to keep true.
 ALEMBIC = ROOT / "impl" / "common" / "db"
@@ -718,6 +717,61 @@ def _first_commit_time(rel: str) -> int | None:
     return int(log[-1]) if log else None
 
 
+def _project_version(pyproject: "Path") -> str:
+    """`[project] version` out of a `pyproject.toml`, without a TOML parser.
+
+    `ci.py` is stdlib-only and runs on whatever interpreter is present, so this
+    reads the one line rather than importing `tomllib` -- which is 3.11+ and is
+    a dependency this runner has deliberately never taken.
+    """
+    for line in pyproject.read_text(encoding="utf-8").splitlines():
+        if line.startswith("version = "):
+            return line.split("=", 1)[1].strip().strip('"').strip("'")
+    return ""
+
+
+def _image_tag_is_published(build: str, version: str) -> bool:
+    """Does the registry already hold `agent-service-<build>:<version>`?
+
+    **Unreachable registry means "do not know", not "no".** A check that turned a
+    disconnected laptop into a failing cut would be worse than the defect it
+    guards, so this returns False and the cut proceeds -- `.ci/images.py` refuses
+    at step 9 either way, which is the backstop this exists to be earlier than.
+    """
+    import urllib.error
+    import urllib.request
+
+    url = (f"http://localhost:5000/v2/agent-service-{build}"
+           f"/manifests/{version}")
+    request = urllib.request.Request(url, method="HEAD")
+    request.add_header(
+        "Accept", "application/vnd.docker.distribution.manifest.v2+json"
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=5) as response:
+            return response.status == 200
+    except (urllib.error.URLError, OSError):
+        return False
+
+
+def _is_ancestor(older: str, newer: str) -> bool:
+    """Is `older` an ancestor of `newer`, or the same commit?
+
+    **The bare-version window is more than one commit, and pinning it to HEAD was
+    wrong** (2026-08-19, found by cutting 0.19.0). The tag names the commit the
+    release IS; the commits that follow it while the version is still bare are
+    the rest of the cut -- the manifest row, which cannot be in the commit it
+    names, and anything the release artifacts need. The invariant is *a bare
+    version has a tag*, not *a bare version is the tag*.
+    """
+    if older == newer:
+        return True
+    return subprocess.run(
+        ["git", "merge-base", "--is-ancestor", older, newer],
+        cwd=ROOT, capture_output=True, check=False,
+    ).returncode == 0
+
+
 def stage_freeze() -> bool:
     """A delivered version is never edited (AS-24), and **the tag is the freeze**.
 
@@ -791,16 +845,42 @@ def stage_freeze() -> bool:
         if tagged.returncode != 0:
             print(f"  cutting    spec/  ({current} is bare and release-{current} "
                   f"does not exist yet)")
-        elif tagged.stdout.strip() != head:
+        elif not _is_ancestor(tagged.stdout.strip(), head):
             failures.append(
                 f"spec/VERSION is the bare {current} and release-{current} names "
-                f"a different commit ({tagged.stdout.strip()[:9]}, HEAD is "
-                f"{head[:9]}). Either the cut moved on without bumping to the "
-                f"next snapshot, or the tag is stale. Main is always a "
-                f"`-snapshot`; the bare state belongs to one commit only."
+                f"{tagged.stdout.strip()[:9]}, which is not an ancestor of HEAD "
+                f"({head[:9]}). Either the tag is stale or the working tree is on "
+                f"a different history. Main is always a `-snapshot`; the bare "
+                f"state belongs to the tagged commit and the commits that finish "
+                f"the cut."
             )
         else:
             print(f"  cut        spec/  ({current} @ release-{current})")
+
+    # **A CUT MUST ALSO MOVE EVERY IMPLEMENTATION VERSION, and this is where that
+    # is caught** (2026-08-19, found by cutting 0.19.0 and not before).
+    #
+    # The release images are built from the cut, and an image tag is never
+    # reused. `versioning.md` §4 step 2 said to move the document version and not
+    # the implementations, so the tag carried numbers the registry already held
+    # as snapshot images; `.ci/images.py` refused at step 9 -- correctly, and
+    # four steps and one irreversible tag too late.
+    #
+    # Checked only while the version is bare, so it costs a normal run nothing.
+    if "-snapshot" not in current:
+        for build in ("claude-python", "codex-python", "gemini-python"):
+            pyproject = ROOT / "impl" / build / "pyproject.toml"
+            if not pyproject.is_file():
+                continue
+            impl_version = _project_version(pyproject)
+            if _image_tag_is_published(build, impl_version):
+                failures.append(
+                    f"impl/{build} is at {impl_version} and the registry already "
+                    f"holds agent-service-{build}:{impl_version}. A cut builds "
+                    f"release images from it and an image tag is never reused, "
+                    f"so bump this build's version before tagging -- "
+                    f"versioning.md §4 step 2."
+                )
 
     # --- the DDL stream, which did not change --------------------------------
     candidates = [
@@ -899,21 +979,31 @@ def stage_freeze() -> bool:
 #: links cannot be repaired by editing it.
 #:
 #: The outbox went out with it and came back on 2026-08-07, so it is covered by
-#: the `docs` entry again rather than named. Worth knowing rather than
-#: rediscovering: this tuple is the whole list of what `links` reads, so a
-#: directory that leaves `docs/` needs adding here in the same commit.
+#: the `docs` entry again rather than named -- and since 2026-08-21 it is not in
+#: the public tree at all, which costs this stage nothing either way. Worth
+#: knowing rather than rediscovering: this tuple is the whole list of what
+#: `links` reads, so a directory that leaves `docs/` needs adding here in the
+#: same commit.
 _LINK_ROOTS = ("README.md", "CLAUDE.md")
-#: **`docs/<build>/` is under the platform level since 2026-08-09** (user), so
-#: every implementation document except the guide is scanned by the first entry
-#: rather than needing one of its own. What is left under an implementation is
-#: `docs/<build>-guide.md`, which still needs scanning -- and `codex-python`
-#: needed adding, because it had never been scanned at all: its documents were
-#: in a tree no level named, so a broken link in any of them was invisible to
-#: this stage for as long as that build has existed.
+#: **Every build needs its own entry, and the reason is that a build's documents
+#: live beside its code.** They were under the platform's `docs/<build>/` for a
+#: day in 2026-08-09 and came back on 2026-08-10 (user), so the first entry does
+#: NOT cover them -- each implementation is named here or its documents are not
+#: read at all.
+#:
+#: **That has now been the same defect twice.** `codex-python` had never been
+#: scanned when it was found the first time: its documents sat in a tree no
+#: level named, so a broken link in any of them was invisible for as long as
+#: that build had existed. `gemini-python` then repeated it exactly -- added
+#: 2026-08-11, never added here, unscanned until 2026-08-21. **A new build must
+#: gain a row in this tuple in the commit that creates it**; nothing else in the
+#: repository will notice that it is missing, because the stage passes just as
+#: cleanly when it reads less.
 _LINK_LEVELS: tuple[tuple[Path, tuple[str, ...]], ...] = (
     (Path("."), ("docs", "spec")),
     (Path("impl") / "claude-python", ("docs",)),
     (Path("impl") / "codex-python", ("docs",)),
+    (Path("impl") / "gemini-python", ("docs",)),
 )
 
 #: ```fenced``` and ~~~fenced~~~ blocks, removed BEFORE scanning. This is not
