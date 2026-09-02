@@ -1,0 +1,1286 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent Service console</title>
+<style>
+  :root {
+    --bg: #ffffff; --fg: #1a1a1a; --muted: #666; --line: #e2e2e2;
+    --panel: #fafafa; --accent: #2563eb; --ok: #15803d; --warn: #b45309;
+    --err: #b91c1c; --code: #f4f4f5;
+    --sys: #7c3aed; --asst: #2563eb; --user: #0f766e; --result: #15803d;
+    --stream: #94a3b8; --rate: #b45309;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1115; --fg: #e6e6e6; --muted: #9aa0aa; --line: #262a33;
+      --panel: #161922; --accent: #60a5fa; --ok: #4ade80; --warn: #fbbf24;
+      --err: #f87171; --code: #1b1f28;
+      --sys: #c084fc; --asst: #60a5fa; --user: #2dd4bf; --result: #4ade80;
+      --stream: #64748b; --rate: #fbbf24;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  code, pre, .mono { font-family: ui-monospace, SFMono-Regular, "Cascadia Code", Consolas, monospace; }
+  header {
+    display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+    padding: 10px 14px; border-bottom: 1px solid var(--line); background: var(--panel);
+    position: sticky; top: 0; z-index: 20;
+  }
+  header h1 { font-size: 15px; margin: 0 8px 0 0; font-weight: 650; letter-spacing: -.01em; }
+  input, select, textarea, button {
+    font: inherit; color: inherit; background: var(--bg);
+    border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px;
+  }
+  textarea { resize: vertical; width: 100%; }
+  button { cursor: pointer; background: var(--panel); white-space: nowrap; }
+  button:hover:not(:disabled) { border-color: var(--accent); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  button.danger { color: var(--err); }
+  .pill {
+    display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px;
+    border-radius: 999px; border: 1px solid var(--line); font-size: 12px; color: var(--muted);
+  }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+  .dot.ok { background: var(--ok); } .dot.err { background: var(--err); }
+  nav { display: flex; gap: 2px; padding: 0 14px; border-bottom: 1px solid var(--line); }
+  nav button {
+    border: 0; border-bottom: 2px solid transparent; border-radius: 0;
+    background: none; padding: 9px 12px; color: var(--muted);
+  }
+  nav button[aria-selected="true"] { color: var(--fg); border-bottom-color: var(--accent); }
+  main { padding: 14px; }
+  .tab[hidden] { display: none; }
+  .cols { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 14px; align-items: start; }
+  @media (max-width: 900px) { .cols { grid-template-columns: 1fr; } }
+  .card { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
+  .card > h2 {
+    margin: 0; padding: 9px 12px; font-size: 12px; font-weight: 650;
+    text-transform: uppercase; letter-spacing: .06em; color: var(--muted);
+    border-bottom: 1px solid var(--line);
+  }
+  .card > .body { padding: 12px; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .row + .row { margin-top: 8px; }
+  label { font-size: 12px; color: var(--muted); display: block; margin-bottom: 3px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  /* Grid items default to min-content sizing, so an input keeps its `size`
+     width and overflows the column. Both lines are needed. */
+  .grid2 > div { min-width: 0; }
+  .grid2 input, .grid2 select { width: 100%; min-width: 0; }
+  .sess {
+    padding: 8px 10px; border-bottom: 1px solid var(--line); cursor: pointer;
+  }
+  .sess:last-child { border-bottom: 0; }
+  .sess[aria-current="true"] { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+  .sess .id { font-size: 12px; }
+  .sess .meta { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  #stream, #chat { min-height: 260px; max-height: 62vh; overflow-y: auto; padding: 4px 0; }
+
+  /* ── Chat view: conversation only, shaped after the Claude Code CLI ── */
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+  .seg button {
+    border: 0; border-radius: 0; padding: 3px 10px; font-size: 12px;
+    background: transparent; color: var(--muted);
+  }
+  .seg button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+  .msg { padding: 9px 14px; }
+  .msg.user {
+    border-left: 3px solid var(--user); background: color-mix(in srgb, var(--user) 7%, transparent);
+    white-space: pre-wrap; word-break: break-word;
+  }
+  .msg.assistant { white-space: pre-wrap; word-break: break-word; }
+  .msg.assistant + .msg.assistant { padding-top: 0; }
+  .who {
+    font-size: 11px; text-transform: uppercase; letter-spacing: .06em;
+    color: var(--muted); margin-bottom: 3px;
+  }
+  .msg.user .who { color: var(--user); }
+  /* Tool call: one dense line, like the CLI's ⏺ Read(path) */
+  .call { padding: 5px 14px; font-size: 13px; }
+  .call .name { color: var(--asst); font-weight: 600; }
+  .call .arg { color: var(--muted); word-break: break-all; }
+  .call .bullet { color: var(--asst); margin-right: 6px; }
+  .out {
+    padding: 1px 14px 5px 30px; font-size: 12px; color: var(--muted);
+    white-space: pre-wrap; word-break: break-word;
+  }
+  .out.err { color: var(--err); }
+  .out .arrow { color: var(--muted); margin-right: 6px; }
+  .think {
+    padding: 4px 14px; font-size: 12px; color: var(--muted); font-style: italic;
+    white-space: pre-wrap;
+  }
+  .turnend {
+    padding: 6px 14px; font-size: 11px; color: var(--muted);
+    border-top: 1px dashed var(--line); margin-top: 4px;
+  }
+  .turnend.bad { color: var(--err); }
+  .chat-sep { height: 1px; background: var(--line); margin: 6px 0; }
+  /* Both rules are needed: `details` is block-level, so without the first the
+     "input"/"full" toggles break onto their own line instead of trailing the
+     call they belong to. */
+  details.inline { display: inline; }
+  details.inline > summary { display: inline; }
+  details.inline pre {
+    margin: 5px 0 0; padding: 8px; background: var(--code); border-radius: 6px;
+    overflow-x: auto; font-size: 12px; max-height: 300px; white-space: pre;
+  }
+  .ev { padding: 7px 12px; border-bottom: 1px solid var(--line); }
+  .ev:last-child { border-bottom: 0; }
+  .ev .hd { display: flex; gap: 8px; align-items: baseline; font-size: 11px; color: var(--muted); }
+  .ev .tag { font-weight: 650; text-transform: uppercase; letter-spacing: .05em; }
+  .ev.system .tag { color: var(--sys); }      .ev.assistant .tag { color: var(--asst); }
+  .ev.user .tag { color: var(--user); }        .ev.result .tag { color: var(--result); }
+  .ev.stream_event .tag { color: var(--stream); } .ev.rate_limit .tag { color: var(--rate); }
+  .ev.done .tag { color: var(--ok); }          .ev.error .tag { color: var(--err); }
+  .ev .text { white-space: pre-wrap; word-break: break-word; margin-top: 3px; }
+  .ev pre {
+    margin: 5px 0 0; padding: 8px; background: var(--code); border-radius: 6px;
+    overflow-x: auto; font-size: 12px; max-height: 340px;
+  }
+  .tool { margin-top: 5px; padding: 6px 8px; background: var(--code); border-radius: 6px; font-size: 12px; }
+  .tool b { color: var(--asst); }
+  .muted { color: var(--muted); }
+  .err { color: var(--err); }
+  .ok { color: var(--ok); }
+  details > summary { cursor: pointer; font-size: 12px; color: var(--muted); }
+  .banner {
+    margin: 0 0 14px; padding: 10px 12px; border-radius: 8px; font-size: 13px;
+    border: 1px solid var(--err); color: var(--err);
+    background: color-mix(in srgb, var(--err) 8%, transparent);
+  }
+  .banner[hidden] { display: none; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
+  .method {
+    font-size: 11px; font-weight: 700; padding: 1px 6px; border-radius: 4px;
+    background: var(--code); color: var(--accent);
+  }
+  .scroll { overflow-x: auto; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Agent Service</h1>
+  <label for="base" class="visually-hidden" style="display:none">Base URL</label>
+  <input id="base" class="mono" size="26" value="" spellcheck="false" title="Base URL of the service">
+  <button id="ping">Check</button>
+  <span class="pill"><span class="dot" id="dot"></span><span id="health">not checked</span></span>
+  <span class="pill" id="sdk" hidden></span>
+  <span style="flex:1"></span>
+  <a id="docslink" class="pill" href="#" target="_blank" rel="noopener">/docs ↗</a>
+</header>
+
+<nav>
+  <button data-tab="console" aria-selected="true">Console</button>
+  <button data-tab="oneshot" aria-selected="false">One-shot query</button>
+  <button data-tab="history" aria-selected="false">History</button>
+  <button data-tab="api" aria-selected="false">OpenAPI</button>
+</nav>
+
+<main>
+  <p class="banner" id="corsWarn" hidden></p>
+
+  <!-- ───────────────────────── Console ───────────────────────── -->
+  <section class="tab" id="tab-console">
+    <div class="cols">
+      <div>
+        <div class="card">
+          <h2>New session</h2>
+          <div class="body">
+            <div class="row"><div style="flex:1">
+              <label for="nTitle">Title</label>
+              <input id="nTitle" style="width:100%" placeholder="optional">
+            </div></div>
+            <div class="row grid2" style="display:grid">
+              <div>
+                <label for="nModel">Model</label>
+                <input id="nModel" class="mono" placeholder="server default">
+              </div>
+              <div>
+                <label for="nMode">Permission mode</label>
+                <select id="nMode"><option value="">server default</option></select>
+              </div>
+            </div>
+            <div class="row grid2" style="display:grid">
+              <div>
+                <label for="nSubdir">Workspace subdir</label>
+                <input id="nSubdir" class="mono" placeholder="optional">
+              </div>
+              <div>
+                <label for="nEffort">Effort</label>
+                <select id="nEffort"><option value="">server default</option></select>
+              </div>
+            </div>
+            <div class="row" style="margin-top:10px">
+              <label style="margin:0"><input type="checkbox" id="nPartial"> partial messages</label>
+              <span style="flex:1"></span>
+              <button class="primary" id="create">Create session</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:14px">
+          <h2>Sessions <span id="sessCount" class="muted"></span></h2>
+          <div id="sessions"></div>
+          <div class="body" style="border-top:1px solid var(--line)">
+            <button id="refresh">Refresh</button>
+            <button id="del" class="danger" disabled>Delete selected</button>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="card">
+          <h2>Turn</h2>
+          <div class="body">
+            <div class="row" style="margin-bottom:8px">
+              <span class="pill" id="curSess">no session selected</span>
+              <span class="pill" id="curStatus" hidden></span>
+              <span style="flex:1"></span>
+              <input id="pModel" class="mono" size="18" placeholder="model…" title="Change model (PATCH on Enter)" disabled>
+              <select id="pMode" title="Change permission mode (PATCH)" disabled><option value="">mode…</option></select>
+            </div>
+            <textarea id="prompt" rows="3" placeholder="Ask the agent something…"></textarea>
+            <div class="row" style="margin-top:8px">
+              <button class="primary" id="send" disabled>Send (stream)</button>
+              <button id="sendSync" disabled>Send (wait)</button>
+              <button id="stop" disabled>Abort stream</button>
+              <button id="interrupt" disabled>Interrupt turn</button>
+              <span style="flex:1"></span>
+              <label style="margin:0" class="muted"><input type="checkbox" id="showStream"> show stream_event</label>
+              <button id="clear">Clear</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:14px">
+          <h2 style="display:flex;align-items:center;gap:10px">
+            <span id="viewTitle">Conversation</span>
+            <span id="evCount" class="muted"></span>
+            <span style="flex:1"></span>
+            <span class="seg">
+              <button id="viewChat" aria-pressed="true">Chat</button
+              ><button id="viewEvents" aria-pressed="false">Events</button>
+            </span>
+          </h2>
+          <div id="chat"><div class="body muted">Nothing yet. Create a session and send a turn.</div></div>
+          <div id="stream" hidden><div class="body muted">No events yet.</div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ───────────────────────── One-shot ───────────────────────── -->
+  <section class="tab" id="tab-oneshot" hidden>
+    <div class="card">
+      <h2>POST /v1/query/stream</h2>
+      <div class="body">
+        <p class="muted" style="margin-top:0">
+          A run with no session: the agent starts, answers, and its subprocess is torn down.
+          Nothing is registered, so this never occupies a <code>max_sessions</code> slot.
+        </p>
+        <textarea id="qPrompt" rows="3" placeholder="List the files in this directory"></textarea>
+        <div class="row" style="margin-top:8px">
+          <input id="qModel" class="mono" placeholder="model (optional)">
+          <select id="qMode"><option value="">permission mode…</option></select>
+          <input id="qSubdir" class="mono" placeholder="workspace subdir (optional)" size="22">
+          <span style="flex:1"></span>
+          <button class="primary" id="qSend">Run (stream)</button>
+          <button id="qStop" disabled>Abort</button>
+          <button id="qClear">Clear</button>
+        </div>
+      </div>
+    </div>
+    <div class="card" style="margin-top:14px">
+      <h2>Events <span id="qCount" class="muted"></span></h2>
+      <div id="qStream"><div class="body muted">No events yet.</div></div>
+    </div>
+  </section>
+
+  <!-- ───────────────────────── History ───────────────────────── -->
+  <section class="tab" id="tab-history" hidden>
+    <div class="card">
+      <h2>Stored transcript &amp; runs</h2>
+      <div class="body">
+        <p class="muted" style="margin-top:0">
+          These routes need <code>AGENT_SERVICE_DATABASE_URL</code>. Without persistence they
+          answer <strong>404</strong> with <code>type: …/persistence-disabled</code>, which is
+          how it differs from the ordinary "no such session" 404 — expected, not a bug.
+        </p>
+        <div class="row">
+          <input id="hSid" class="mono" placeholder="session_id" size="34">
+          <input id="hLimit" type="number" min="1" max="1000" value="200" size="5" title="limit">
+          <input id="hAfter" type="number" placeholder="after (seq)" size="8" title="after">
+          <button class="primary" id="hLoad">Load transcript</button>
+        </div>
+        <div class="row">
+          <input id="hRun" class="mono" placeholder="run_id" size="34">
+          <button id="hLoadRun">Load run</button>
+        </div>
+      </div>
+    </div>
+    <div class="card" style="margin-top:14px">
+      <h2>Result</h2>
+      <div class="body scroll"><pre id="hOut" class="mono muted">Nothing loaded.</pre></div>
+    </div>
+  </section>
+
+  <!-- ───────────────────────── OpenAPI ───────────────────────── -->
+  <section class="tab" id="tab-api" hidden>
+    <div class="card">
+      <h2>Routes from <code>/openapi.json</code></h2>
+      <div class="body">
+        <div class="row">
+          <button class="primary" id="loadSpec">Load spec</button>
+          <span id="specInfo" class="muted"></span>
+        </div>
+      </div>
+      <div class="scroll"><table id="specTable"></table></div>
+    </div>
+    <div class="card" style="margin-top:14px">
+      <h2>Ad-hoc request</h2>
+      <div class="body">
+        <div class="row">
+          <select id="rMethod">
+            <option>GET</option><option>POST</option><option>PATCH</option><option>DELETE</option>
+          </select>
+          <input id="rPath" class="mono" style="flex:1;min-width:220px" value="/v1/capabilities">
+          <button class="primary" id="rSend">Send</button>
+        </div>
+        <div class="row"><div style="flex:1">
+          <label for="rBody">JSON body (POST/PATCH)</label>
+          <textarea id="rBody" rows="4" class="mono" placeholder='{"prompt": "hello"}'></textarea>
+        </div></div>
+        <div class="scroll" style="margin-top:8px"><pre id="rOut" class="mono muted">No request sent.</pre></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+(() => {
+  "use strict";
+
+  const $ = (id) => document.getElementById(id);
+  const el = (tag, cls, text) => {
+    const n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text != null) n.textContent = text;
+    return n;
+  };
+
+  // The service is same-origin when this page is served through web/serve.py.
+  // Opened as a file:// URL it is not, and the browser will block every read
+  // unless the service sends CORS headers — see the banner logic below.
+  const sameOrigin = location.protocol === "http:" || location.protocol === "https:";
+  const state = {
+    base: localStorage.getItem("agentsvc.base") || (sameOrigin ? location.origin : "http://127.0.0.1:8000"),
+    sid: null,
+    sessions: [],
+    abort: null,
+    qAbort: null,
+    modes: [],
+    efforts: [],
+    models: [],
+    // Whether THIS build can price a turn at all. Undefined until capabilities
+    // are read, and deliberately not defaulted to true: a console that assumes
+    // it can price will print a number for a build that has none.
+    reportsCost: undefined,
+    // **This page is served by all three builds**, so it must not name one.
+    // Every assistant turn was labelled "claude" regardless of what answered
+    // it -- read from `impl.name` now, with a neutral fallback for a service
+    // too old to report one.
+    agentLabel: "agent",
+    // Guards against a slow transcript landing in the pane after the user has
+    // clicked a different session.
+    rehydrateToken: 0,
+    // The last prompt drawn in the conversation, so a build that echoes it
+    // back does not draw it twice. See `chatUser`.
+    lastUserText: null,
+    // Whether a stored transcript can be read back. False when the service has
+    // no database, in which case a reload genuinely has nothing to rehydrate.
+    hasHistory: undefined,
+  };
+  $("base").value = state.base;
+  const url = (p) => state.base.replace(/\/+$/, "") + p;
+  $("docslink").href = url("/docs");
+
+  // ── HTTP ──────────────────────────────────────────────────────────────
+  async function api(method, path, body) {
+    const opts = { method, headers: {} };
+    if (body !== undefined) {
+      opts.headers["Content-Type"] = "application/json";
+      opts.body = JSON.stringify(body);
+    }
+    const res = await fetch(url(path), opts);
+    const text = await res.text();
+    let data = null;
+    if (text) { try { data = JSON.parse(text); } catch { data = text; } }
+    if (!res.ok) {
+      const detail = data && typeof data === "object"
+        ? (data.detail || data.title || JSON.stringify(data))
+        : (data || res.statusText);
+      const err = new Error(`${res.status} ${detail}`);
+      err.status = res.status; err.body = data;
+      throw err;
+    }
+    return data;
+  }
+
+  function showCors(e) {
+    const b = $("corsWarn");
+    b.hidden = false;
+    b.innerHTML =
+      "<b>Could not read the response.</b> This page is at <code>" + location.origin +
+      "</code> and the service is at <code>" + state.base + "</code>. " +
+      "The service sends no CORS headers, so a cross-origin browser request is blocked. " +
+      "Serve this file through <code>web/serve.py</code> (same origin, no service change), " +
+      "or run the page from the service's own origin. Raw error: " + e.message;
+  }
+
+  // ── Health / capabilities ─────────────────────────────────────────────
+  async function ping() {
+    $("dot").className = "dot"; $("health").textContent = "checking…";
+    try {
+      const h = await api("GET", "/healthz");
+      $("dot").className = "dot " + (h.credentials_configured ? "ok" : "err");
+      $("health").textContent = h.credentials_configured
+        ? "ok" : "up, but no credentials configured";
+      $("corsWarn").hidden = true;
+      try {
+        const c = await api("GET", "/v1/capabilities");
+        state.modes = c.permission_modes || [];
+        state.efforts = c.effort_levels || [];
+        // `/v1/capabilities` reports `default_model`, not a list of models --
+        // the service does not enumerate them, so the model fields are free text.
+        state.defaultModel = c.default_model || "";
+        // **Read, never assumed.** Two of the three builds report no monetary
+        // figure at all, so `total_cost_usd` is null on every session forever
+        // rather than "not yet known" -- and rendering that as $0.0000 says
+        // *free*, which is the exact defect the API corrected when it made the
+        // field nullable.
+        state.reportsCost = c.reports_cost_usd;
+        // "gemini-python" -> "gemini". The build suffix is this repository's
+        // business, not something to put beside every answer.
+        state.agentLabel = (c.impl?.name || "").replace(/-python$/, "") || "agent";
+        $("sdk").hidden = false;
+        $("sdk").textContent = "SDK " + (c.sdk_version || "?");
+        if (state.defaultModel) {
+          $("nModel").placeholder = state.defaultModel + " (server default)";
+          $("qModel").placeholder = state.defaultModel + " (server default)";
+        }
+        fillEnums();
+      } catch { /* capabilities is optional for the console to work */ }
+      await refresh();
+    } catch (e) {
+      $("dot").className = "dot err";
+      $("health").textContent = "unreachable";
+      if (e instanceof TypeError) showCors(e);
+      else $("health").textContent = e.message;
+    }
+  }
+
+  function fillOptions(sel, values, placeholder) {
+    const keep = sel.value;
+    sel.innerHTML = "";
+    sel.append(new Option(placeholder, ""));
+    for (const v of values) sel.append(new Option(v, v));
+    sel.value = keep;
+  }
+  function fillEnums() {
+    fillOptions($("nMode"), state.modes, "server default");
+    fillOptions($("qMode"), state.modes, "permission mode…");
+    fillOptions($("pMode"), state.modes, "mode…");
+    fillOptions($("nEffort"), state.efforts, "server default");
+  }
+
+  // ── Sessions ──────────────────────────────────────────────────────────
+  async function refresh() {
+    try {
+      const list = await api("GET", "/v1/sessions");
+      state.sessions = list.sessions || [];
+    } catch (e) {
+      if (e instanceof TypeError) return showCors(e);
+      state.sessions = [];
+    }
+    renderSessions();
+  }
+
+  function renderSessions() {
+    const box = $("sessions");
+    box.innerHTML = "";
+    $("sessCount").textContent = state.sessions.length ? `(${state.sessions.length})` : "";
+    if (!state.sessions.length) {
+      box.append(el("div", "body muted", "No live sessions."));
+      return;
+    }
+    for (const s of state.sessions) {
+      const d = el("div", "sess");
+      d.setAttribute("aria-current", String(s.session_id === state.sid));
+      const id = el("div", "id mono", s.title ? `${s.title}` : s.session_id.slice(0, 12) + "…");
+      const meta = el("div", "meta",
+        `${s.status} · ${s.turns} turn${s.turns === 1 ? "" : "s"}` +
+        costLabel(s.total_cost_usd) +
+        (s.model ? ` · ${s.model}` : ""));
+      d.append(id, meta);
+      if (s.title) {
+        const sub = el("div", "meta mono", s.session_id.slice(0, 12) + "…");
+        d.append(sub);
+      }
+      d.onclick = () => select(s.session_id);
+      box.append(d);
+    }
+  }
+
+  function select(sid) {
+    state.sid = sid;
+    const s = state.sessions.find((x) => x.session_id === sid);
+    $("curSess").textContent = sid ? sid : "no session selected";
+    $("curStatus").hidden = !s;
+    if (s) $("curStatus").textContent = s.status;
+    for (const b of ["send", "sendSync", "interrupt", "del"]) $(b).disabled = !sid;
+    $("pModel").disabled = $("pMode").disabled = !sid;
+    if (s) { $("pModel").value = s.model || ""; $("pMode").value = s.permission_mode || ""; }
+    $("hSid").value = sid || "";
+    renderSessions();
+    if (sid) rehydrate(sid);
+  }
+
+  // **The conversation is re-read from the service, never kept in the page.**
+  //
+  // A turn does not survive a disconnect on any build -- that is a decision,
+  // not a gap -- so this page holds no state worth preserving across a reload.
+  // What it can do is ask what happened, which is what the stored transcript
+  // is for, and it is the reason selecting a session shows a conversation
+  // rather than an empty pane.
+  //
+  // **Requires a database.** With none the route answers 501 and there is
+  // genuinely nothing to show: the events were streamed to whoever was
+  // listening and never stored. That is said in the pane rather than left as
+  // an empty box, because "no history configured" and "nothing happened yet"
+  // look identical otherwise.
+  async function rehydrate(sid) {
+    const token = ++state.rehydrateToken;
+    chatBox().innerHTML = "";
+    let page;
+    try {
+      page = await api("GET",
+        `/v1/sessions/${encodeURIComponent(sid)}/transcript?limit=500`);
+    } catch (e) {
+      // Stale: the user clicked another session while this was in flight.
+      if (token !== state.rehydrateToken) return;
+      // **Branch on the problem `type`, never on the status.** A service with
+      // no database answers 404 for this route -- the same code an unknown
+      // session gets -- and the two are told apart only by `type`. That is
+      // deliberate on the service side: the route exists and refuses, because
+      // an absent route would be indistinguishable from a missing session.
+      const kind = String(e.body?.type || "");
+      if (kind.endsWith("/persistence-disabled")) {
+        state.hasHistory = false;
+        chatAppend(el("div", "muted",
+          "No stored transcript: this deployment has no database, so turns are " +
+          "streamed and never kept. The conversation above is only what this " +
+          "page has seen."));
+      } else {
+        chatAppend(el("div", "muted",
+          "The transcript could not be read — " + (e.message || e)));
+      }
+      return;
+    }
+    if (token !== state.rehydrateToken) return;
+    state.hasHistory = true;
+    const events = page.events || [];
+    if (!events.length) {
+      chatAppend(el("div", "muted", "No turns on this session yet."));
+      return;
+    }
+    // The SAME renderer the live stream uses, fed stored events: a rehydrated
+    // conversation that formatted differently from a live one would be a
+    // second implementation of the hard part.
+    for (const e of events) renderChat(e.type, e);
+    if (page.next_after != null) {
+      chatAppend(el("div", "muted",
+        `Showing the first 500 events. More remain — use the History tab from event ${page.next_after}.`));
+    }
+  }
+
+  function runOptions(prefix) {
+    const o = {};
+    const model = $(prefix + "Model")?.value.trim();
+    const mode = $(prefix + "Mode")?.value;
+    const subdir = $(prefix + "Subdir")?.value.trim();
+    const effort = $(prefix + "Effort")?.value;
+    if (model) o.model = model;
+    if (mode) o.permission_mode = mode;
+    if (subdir) o.workspace_subdir = subdir;
+    if (effort) o.effort = effort;
+    if ($("nPartial")?.checked && prefix === "n") o.include_partial_messages = true;
+    return o;
+  }
+
+  $("create").onclick = async () => {
+    const body = { options: runOptions("n") };
+    const title = $("nTitle").value.trim();
+    if (title) body.title = title;
+    $("create").disabled = true;
+    try {
+      const rec = await api("POST", "/v1/sessions", body);
+      $("nTitle").value = "";
+      await refresh();
+      select(rec.session_id);
+      note("system", "session created", rec);
+    } catch (e) {
+      note("error", "create failed", e.body || e.message);
+    } finally {
+      $("create").disabled = false;
+    }
+  };
+
+  $("refresh").onclick = refresh;
+
+  $("del").onclick = async () => {
+    if (!state.sid) return;
+    const sid = state.sid;
+    $("del").disabled = true;
+    try {
+      await api("DELETE", `/v1/sessions/${encodeURIComponent(sid)}`);
+      note("system", "session closed", { session_id: sid });
+      state.sid = null; select(null);
+      await refresh();
+    } catch (e) {
+      note("error", "delete failed", e.body || e.message);
+    } finally {
+      $("del").disabled = !state.sid;
+    }
+  };
+
+  async function patch(field, value) {
+    if (!state.sid || !value) return;
+    try {
+      const rec = await api("PATCH", `/v1/sessions/${encodeURIComponent(state.sid)}`, { [field]: value });
+      note("system", `${field} → ${value}`, rec);
+      await refresh();
+    } catch (e) {
+      note("error", "patch failed", e.body || e.message);
+    }
+  }
+  $("pModel").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") patch("model", e.target.value.trim());
+  });
+  $("pMode").onchange = (e) => patch("permission_mode", e.target.value);
+
+  $("interrupt").onclick = async () => {
+    if (!state.sid) return;
+    try {
+      const r = await api("POST", `/v1/sessions/${encodeURIComponent(state.sid)}/interrupt`);
+      note("system", `interrupt: ${r.interrupted ? "sent" : "nothing to interrupt"} (${r.status})`, r);
+      await refresh();
+    } catch (e) {
+      note("error", "interrupt failed", e.body || e.message);
+    }
+  };
+
+  // ── Event rendering ───────────────────────────────────────────────────
+  function target(which) { return which === "q" ? $("qStream") : $("stream"); }
+  function counter(which) { return which === "q" ? $("qCount") : $("evCount"); }
+  let counts = { main: 0, q: 0 };
+
+  function clearStream(which) {
+    const box = target(which);
+    box.innerHTML = "";
+    box.append(el("div", "body muted", "No events yet."));
+    counts[which === "q" ? "q" : "main"] = 0;
+    counter(which).textContent = "";
+    if (which !== "q") {
+      chatBox().innerHTML = "";
+      chatBox().append(el("div", "body muted", "Nothing yet. Create a session and send a turn."));
+      toolNodes.clear();
+    }
+  }
+
+  // **The three builds do not frame their SSE the same way, and nothing
+  // publishes that.** Measured against all three, 2026-08-14:
+  //
+  //   claude, codex  the SSE `event:` name IS the event's own `type`
+  //   gemini         every frame is named `event`, with `type` in the payload
+  //
+  // So dispatching the conversation view on the frame name renders nothing at
+  // all on one build of three. The payload's own `type` is the reliable
+  // discriminator and the frame name is the fallback -- which also keeps the
+  // service-level names (`error`, `done`, `rate_limit`) working, since those
+  // carry no `type`.
+  function eventKind(name, ev) {
+    return (ev && typeof ev.type === "string" && ev.type) || name;
+  }
+
+  function addEvent(which, name, ev) {
+    if (which !== "q") renderChat(eventKind(name, ev), ev);
+    const box = target(which);
+    if (box.firstChild && box.firstChild.classList?.contains("muted")) box.innerHTML = "";
+    const wrap = el("div", "ev " + name);
+    const hd = el("div", "hd");
+    hd.append(el("span", "tag", name));
+    if (ev && ev.subtype) hd.append(el("span", null, ev.subtype));
+    if (ev && ev.seq != null) hd.append(el("span", null, "#" + ev.seq));
+    hd.append(el("span", null, new Date().toLocaleTimeString()));
+    wrap.append(hd);
+
+    const blocks = ev && Array.isArray(ev.content) ? ev.content : null;
+    let rendered = false;
+    if (blocks) {
+      for (const b of blocks) {
+        if (b && b.type === "text" && typeof b.text === "string") {
+          wrap.append(el("div", "text", b.text)); rendered = true;
+        } else if (b && b.type === "tool_use") {
+          const t = el("div", "tool");
+          t.innerHTML = "<b>tool_use</b> " + escapeHtml(b.name || "");
+          const pre = el("pre", "mono", JSON.stringify(b.input ?? {}, null, 2));
+          t.append(pre); wrap.append(t); rendered = true;
+        } else if (b && b.type === "tool_result") {
+          const t = el("div", "tool");
+          t.innerHTML = "<b>tool_result</b>";
+          t.append(el("pre", "mono", stringify(b.content)));
+          wrap.append(t); rendered = true;
+        }
+      }
+    }
+    if (!rendered) {
+      const d = el("details");
+      d.append(el("summary", null, "payload"));
+      d.append(el("pre", "mono", stringify(ev)));
+      wrap.append(d);
+    } else if (ev && ev.raw) {
+      const d = el("details");
+      d.append(el("summary", null, "raw"));
+      d.append(el("pre", "mono", stringify(ev.raw)));
+      wrap.append(d);
+    }
+
+    box.append(wrap);
+    box.scrollTop = box.scrollHeight;
+    const key = which === "q" ? "q" : "main";
+    counter(which).textContent = `(${++counts[key]})`;
+  }
+
+  function note(name, msg, payload) {
+    const box = $("stream");
+    if (box.firstChild && box.firstChild.classList?.contains("muted")) box.innerHTML = "";
+    const wrap = el("div", "ev " + name);
+    const hd = el("div", "hd");
+    hd.append(el("span", "tag", name));
+    hd.append(el("span", null, new Date().toLocaleTimeString()));
+    wrap.append(hd, el("div", "text", msg));
+    if (payload !== undefined) {
+      const d = el("details");
+      d.append(el("summary", null, "detail"));
+      d.append(el("pre", "mono", stringify(payload)));
+      wrap.append(d);
+    }
+    box.append(wrap);
+    box.scrollTop = box.scrollHeight;
+
+    // Session lifecycle is context a reader wants in the chat view too, but
+    // as a rule, not as a payload.
+    if (name === "system" || name === "error") {
+      const d = el("div", "turnend" + (name === "error" ? " bad" : ""), "— " + msg + " —");
+      d.style.textAlign = "center";
+      d.style.borderTop = "0";
+      chatAppend(d);
+    }
+  }
+
+  // **A cost is shown only when there is one, and never invented.**
+  //
+  // `null` means two different things and neither is zero: on a build that
+  // cannot price a turn it is permanent, and on one that can it means the
+  // figure has not arrived yet. `reports_cost_usd` is what tells them apart,
+  // so a build that cannot price says so instead of showing a blank that looks
+  // like a bug.
+  //
+  // The figure itself is a FLOOR rather than the amount owed -- an interrupted
+  // turn does not move it -- which is why it is marked rather than printed
+  // bare next to an interrupt button.
+  function costLabel(value) {
+    if (value != null) return ` · ≥$${Number(value).toFixed(4)}`;
+    if (state.reportsCost === false) return " · no cost reported";
+    return "";
+  }
+
+  const stringify = (v) => typeof v === "string" ? v : JSON.stringify(v, null, 2);
+  const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+  // ── Chat view ─────────────────────────────────────────────────────────
+  // The same events, rendered as a conversation instead of as JSON. Nothing
+  // is fetched twice: `addEvent` feeds both this and the raw log, so
+  // switching views mid-turn never loses anything.
+  const toolNodes = new Map();   // tool_use_id -> the element to hang its result under
+
+  // The one argument worth showing per tool, in the CLI's spirit: the thing
+  // that tells you WHICH invocation this is.
+  const TOOL_ARG = {
+    Read: "file_path", Write: "file_path", Edit: "file_path", NotebookEdit: "notebook_path",
+    Bash: "command", PowerShell: "command", Grep: "pattern", Glob: "pattern",
+    WebFetch: "url", WebSearch: "query", Task: "description", Skill: "skill",
+  };
+  function toolArg(name, input) {
+    if (!input || typeof input !== "object") return "";
+    const key = TOOL_ARG[name];
+    let v = key && input[key] != null ? input[key] : null;
+    if (v == null) {
+      // Unknown tool: show the first short scalar, which is nearly always the
+      // identifying one.
+      for (const k of Object.keys(input)) {
+        if (typeof input[k] === "string" || typeof input[k] === "number") { v = input[k]; break; }
+      }
+    }
+    if (v == null) return "";
+    const s = String(v).replace(/\s+/g, " ").trim();
+    return s.length > 120 ? s.slice(0, 117) + "…" : s;
+  }
+
+  // A tool_result's content is a string on some tools and a block list on
+  // others, so both shapes are flattened before summarising.
+  function resultText(content) {
+    if (typeof content === "string") return content;
+    if (Array.isArray(content)) {
+      return content.map((b) =>
+        typeof b === "string" ? b : (b && b.type === "text" ? b.text : stringify(b))).join("\n");
+    }
+    return content == null ? "" : stringify(content);
+  }
+  function summarise(text) {
+    const lines = text.split("\n").filter((l) => l.trim() !== "");
+    if (!lines.length) return "(no output)";
+    const first = lines[0].length > 140 ? lines[0].slice(0, 137) + "…" : lines[0];
+    return lines.length > 1 ? `${first}  (+${lines.length - 1} more line${lines.length === 2 ? "" : "s"})` : first;
+  }
+
+  function chatBox() { return $("chat"); }
+  function chatAppend(node) {
+    const box = chatBox();
+    if (box.firstChild && box.firstChild.classList?.contains("muted")) box.innerHTML = "";
+    box.append(node);
+    if ($("viewChat").getAttribute("aria-pressed") === "true") box.scrollTop = box.scrollHeight;
+  }
+
+  // **The builds disagree about who echoes the prompt.** Claude sends `user`
+  // frames only for tool results, so this page echoes what it sent. Gemini
+  // sends the prompt back as a `user` message of its own, which rendered the
+  // same words twice. Deduping on the text covers both without the console
+  // having to know which build it is talking to.
+  //
+  // Cleared by the next assistant output, so a caller genuinely sending the
+  // same prompt twice in a row still sees both.
+  function chatUser(text) {
+    if (text === state.lastUserText) return;
+    state.lastUserText = text;
+    const d = el("div", "msg user");
+    d.append(el("div", "who", "you"), document.createTextNode(text));
+    chatAppend(d);
+  }
+
+  function chatAssistantBlocks(blocks, first) {
+    for (const b of blocks) {
+      if (!b || typeof b !== "object") continue;
+      if (b.type === "text" && b.text?.trim()) {
+        state.lastUserText = null;
+        // **Consecutive assistant text is ONE message, not one per frame.**
+        // Gemini streams its answer as deltas -- "hello " then "world" -- and a
+        // bubble per delta turned one sentence into a stack of fragments.
+        // Claude sends whole messages, so it lands in the same place either
+        // way; this is a property of a chat view rather than a build quirk.
+        // Each delta arrives as its OWN event, so `first` is true every time
+        // and cannot be the discriminator -- what matters is whether the last
+        // thing drawn was already this agent speaking.
+        const prev = chatBox().lastElementChild;
+        if (prev && prev.classList?.contains("assistant")) {
+          prev.append(document.createTextNode(b.text));
+          first = false;
+        } else {
+          const d = el("div", "msg assistant");
+          if (first) { d.append(el("div", "who", state.agentLabel)); first = false; }
+          d.append(document.createTextNode(b.text));
+          chatAppend(d);
+        }
+      } else if (b.type === "thinking" && b.thinking) {
+        const d = el("details", "think");
+        d.append(el("summary", null, "thinking"), document.createTextNode(b.thinking));
+        chatAppend(d);
+      } else if (b.type === "tool_use") {
+        const line = el("div", "call");
+        line.append(el("span", "bullet", "⏺"));
+        line.append(el("span", "name", b.name || "tool"));
+        const arg = toolArg(b.name, b.input);
+        if (arg) {
+          line.append(document.createTextNode("("));
+          line.append(el("span", "arg", arg));
+          line.append(document.createTextNode(")"));
+        }
+        const det = el("details", "inline");
+        det.append(el("summary", null, " input"));
+        det.append(el("pre", "mono", stringify(b.input ?? {})));
+        line.append(document.createTextNode(" "), det);
+        chatAppend(line);
+        if (b.id) toolNodes.set(b.id, line);
+      }
+    }
+    return first;
+  }
+
+  function chatToolResults(blocks) {
+    for (const b of blocks) {
+      if (!b || b.type !== "tool_result") continue;
+      const text = resultText(b.content);
+      const out = el("div", "out" + (b.is_error ? " err" : ""));
+      out.append(el("span", "arrow", "⎿"));
+      out.append(document.createTextNode(summarise(text)));
+      if (text.split("\n").length > 1 || text.length > 140) {
+        const det = el("details", "inline");
+        det.append(el("summary", null, " full"));
+        det.append(el("pre", "mono", text));
+        out.append(document.createTextNode(" "), det);
+      }
+      const anchor = b.tool_use_id && toolNodes.get(b.tool_use_id);
+      if (anchor && anchor.parentNode) anchor.after(out);
+      else chatAppend(out);
+    }
+  }
+
+  function chatTurnEnd(payload) {
+    const p = payload || {};
+    const ok = p.is_error !== true && p.subtype !== "error";
+    const bits = [];
+    if (p.subtype) bits.push(p.subtype);
+    if (p.duration_ms != null) bits.push((p.duration_ms / 1000).toFixed(1) + "s");
+    // `turn_cost_usd` is this turn's own and already differenced by the
+    // service; `total_cost_usd` is cumulative on one build and null on two.
+    // Prefer the per-turn figure and mark either as a floor.
+    const cost = p.turn_cost_usd ?? p.total_cost_usd;
+    if (cost != null) bits.push("≥$" + Number(cost).toFixed(4));
+    if (p.num_turns != null) bits.push(p.num_turns + " turn" + (p.num_turns === 1 ? "" : "s"));
+    // **`stop_kind` first: it is the closed set every build maps onto**, where
+    // `stop_reason` is whichever vendor spelling that build happens to use.
+    // Both are shown when they disagree, because the raw one is what a log
+    // will have.
+    if (p.stop_kind) bits.push(p.stop_kind);
+    if (p.stop_reason && p.stop_reason !== p.stop_kind) bits.push(p.stop_reason);
+    const d = el("div", "turnend" + (ok ? "" : " bad"), (ok ? "✓ " : "✗ ") + bits.join(" · "));
+    chatAppend(d);
+  }
+
+  // Called for every event the console receives. Anything with no
+  // conversational meaning -- init frames, token deltas, the terminal `done`
+  // envelope -- is deliberately dropped here; the Events view still has it.
+  // **`AgentEvent.content` is undescribed in the contract and the builds fill
+  // it differently.** Measured: claude and gemini put normalised text blocks
+  // in `content`; codex leaves it unset and carries the text at
+  // `raw.item.text`. A console reading only `content` shows an empty
+  // conversation for a turn that succeeded, which is what this recovers.
+  //
+  // Deliberately narrow -- one known shape, not a search of the whole payload.
+  // Guessing at arbitrary vendor structures is how a renderer starts lying
+  // about what an agent said.
+  function blocksFromRaw(ev) {
+    const text = ev?.raw?.item?.text;
+    return typeof text === "string" && text ? [{ type: "text", text }] : [];
+  }
+
+  function renderChat(name, ev) {
+    if (name === "system" || name === "stream_event" || name === "done") return;
+    if (name === "error") {
+      const d = el("div", "turnend bad", "✗ " + (ev?.detail || ev?.title || stringify(ev)));
+      return chatAppend(d);
+    }
+    if (name === "rate_limit") {
+      return chatAppend(el("div", "turnend bad", "rate limited — " + stringify(ev?.subtype ?? "")));
+    }
+    if (name === "result") return chatTurnEnd(ev?.raw?.data ?? ev?.raw ?? ev);
+
+    const blocks = Array.isArray(ev?.content) ? ev.content : blocksFromRaw(ev);
+    if (name === "user") {
+      // Two different things arrive as `user`: the prompt this page echoed,
+      // and the SDK's tool_result frames. They are told apart by content.
+      if (blocks.some((b) => b && b.type === "tool_result")) return chatToolResults(blocks);
+      const text = blocks.filter((b) => b?.type === "text").map((b) => b.text).join("\n");
+      if (text.trim()) chatUser(text);
+      return;
+    }
+    if (name === "assistant") chatAssistantBlocks(blocks, true);
+  }
+
+  // ── SSE over fetch ────────────────────────────────────────────────────
+  // EventSource cannot be used: it only issues GET, and both streaming routes
+  // are POST with a JSON body. So the frames are parsed by hand — which is
+  // also the only way to keep the AbortController that exercises the
+  // service's disconnect path.
+  async function streamSSE(path, body, which, signal) {
+    const res = await fetch(url(path), {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Accept": "text/event-stream" },
+      body: JSON.stringify(body),
+      signal,
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      let payload = text; try { payload = JSON.parse(text); } catch {}
+      addEvent(which, "error", payload);
+      return;
+    }
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    const showStream = $("showStream").checked;
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      // Frames are separated by a blank line. A chunk can split one anywhere,
+      // so only complete frames are consumed and the remainder is kept.
+      let idx;
+      while ((idx = buf.indexOf("\n\n")) !== -1) {
+        const frame = buf.slice(0, idx);
+        buf = buf.slice(idx + 2);
+        let name = "message", data = "";
+        for (const line of frame.split("\n")) {
+          if (line.startsWith("event:")) name = line.slice(6).trim();
+          else if (line.startsWith("data:")) data += line.slice(5).trim();
+        }
+        if (!data) continue;
+        let payload; try { payload = JSON.parse(data); } catch { payload = data; }
+        if (name === "stream_event" && !showStream && which !== "q") continue;
+        addEvent(which, name, payload);
+      }
+    }
+  }
+
+  $("send").onclick = async () => {
+    const prompt = $("prompt").value.trim();
+    if (!prompt || !state.sid) return;
+    addEvent("main", "user", { content: [{ type: "text", text: prompt }] });
+    $("prompt").value = "";
+    // **Abandon any stream still open before starting another.** A browser
+    // allows about six connections per origin, and an SSE turn holds one for
+    // its whole duration -- so a few abandoned streams silently queue every
+    // later request behind them, which looks exactly like a service that has
+    // stopped responding. Measured while testing this console: six abandoned
+    // turns and the seventh took minutes to deliver its first frame.
+    if (state.abort) state.abort.abort();
+    state.abort = new AbortController();
+    setBusy(true);
+    try {
+      await streamSSE(`/v1/sessions/${encodeURIComponent(state.sid)}/messages/stream`,
+                      { prompt }, "main", state.abort.signal);
+    } catch (e) {
+      if (e.name === "AbortError") note("system", "stream aborted by you — the turn may still be running; use Interrupt");
+      else if (e instanceof TypeError) showCors(e);
+      else note("error", e.message);
+    } finally {
+      setBusy(false); state.abort = null; refresh();
+    }
+  };
+
+  $("sendSync").onclick = async () => {
+    const prompt = $("prompt").value.trim();
+    if (!prompt || !state.sid) return;
+    addEvent("main", "user", { content: [{ type: "text", text: prompt }] });
+    $("prompt").value = "";
+    setBusy(true);
+    try {
+      const r = await api("POST", `/v1/sessions/${encodeURIComponent(state.sid)}/messages`, { prompt });
+      for (const ev of r.events || []) addEvent("main", ev.type, ev);
+      addEvent("main", "done", r);
+    } catch (e) {
+      note("error", e.message, e.body);
+    } finally {
+      setBusy(false); refresh();
+    }
+  };
+
+  function setBusy(b) {
+    $("send").disabled = b || !state.sid;
+    $("sendSync").disabled = b || !state.sid;
+    $("stop").disabled = !b;
+  }
+  $("stop").onclick = () => state.abort && state.abort.abort();
+  $("clear").onclick = () => clearStream("main");
+
+  // Chat / Events toggle. Both are always populated; this only decides which
+  // one is on screen, so switching mid-turn costs nothing and loses nothing.
+  function setView(chat) {
+    $("viewChat").setAttribute("aria-pressed", String(chat));
+    $("viewEvents").setAttribute("aria-pressed", String(!chat));
+    $("chat").hidden = !chat;
+    $("stream").hidden = chat;
+    $("viewTitle").textContent = chat ? "Conversation" : "Events";
+    if (chat) $("chat").scrollTop = $("chat").scrollHeight;
+    else $("stream").scrollTop = $("stream").scrollHeight;
+    localStorage.setItem("agentsvc.view", chat ? "chat" : "events");
+  }
+  $("viewChat").onclick = () => setView(true);
+  $("viewEvents").onclick = () => setView(false);
+  setView(localStorage.getItem("agentsvc.view") !== "events");
+
+  $("prompt").addEventListener("keydown", (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === "Enter") $("send").click();
+  });
+
+  // ── One-shot ──────────────────────────────────────────────────────────
+  $("qSend").onclick = async () => {
+    const prompt = $("qPrompt").value.trim();
+    if (!prompt) return;
+    const options = {};
+    if ($("qModel").value.trim()) options.model = $("qModel").value.trim();
+    if ($("qMode").value) options.permission_mode = $("qMode").value;
+    if ($("qSubdir").value.trim()) options.workspace_subdir = $("qSubdir").value.trim();
+    state.qAbort = new AbortController();
+    $("qSend").disabled = true; $("qStop").disabled = false;
+    try {
+      await streamSSE("/v1/query/stream", { prompt, options }, "q", state.qAbort.signal);
+    } catch (e) {
+      if (e.name !== "AbortError") addEvent("q", "error", e.message);
+    } finally {
+      $("qSend").disabled = false; $("qStop").disabled = true; state.qAbort = null;
+    }
+  };
+  $("qStop").onclick = () => state.qAbort && state.qAbort.abort();
+  $("qClear").onclick = () => clearStream("q");
+
+  // ── History ───────────────────────────────────────────────────────────
+  $("hLoad").onclick = async () => {
+    const sid = $("hSid").value.trim();
+    if (!sid) return;
+    const q = new URLSearchParams({ limit: $("hLimit").value || "200" });
+    if ($("hAfter").value) q.set("after", $("hAfter").value);
+    await into("hOut", "GET", `/v1/sessions/${encodeURIComponent(sid)}/transcript?${q}`);
+  };
+  $("hLoadRun").onclick = async () => {
+    const id = $("hRun").value.trim();
+    if (id) await into("hOut", "GET", `/v1/runs/${encodeURIComponent(id)}`);
+  };
+
+  async function into(outId, method, path, body) {
+    const out = $(outId);
+    out.className = "mono muted"; out.textContent = "loading…";
+    try {
+      const data = await api(method, path, body);
+      out.className = "mono"; out.textContent = stringify(data);
+    } catch (e) {
+      out.className = "mono err";
+      // "No database configured" and "no such session" are BOTH 404 here, told
+      // apart by the problem `type` -- which is why this checks the type rather
+      // than the status. See the route description in api.py.
+      const disabled = typeof e.body?.type === "string"
+        && e.body.type.includes("persistence-disabled");
+      out.textContent = disabled
+        ? "History is not available — this service has no database configured.\n" +
+          "Set AGENT_SERVICE_DATABASE_URL to use this route.\n\n" + stringify(e.body)
+        : e.message + "\n\n" + stringify(e.body ?? "");
+    }
+  }
+
+  // ── OpenAPI ───────────────────────────────────────────────────────────
+  $("loadSpec").onclick = async () => {
+    const table = $("specTable");
+    table.innerHTML = "";
+    try {
+      const spec = await api("GET", "/openapi.json");
+      $("specInfo").textContent = `${spec.info?.title ?? "?"} v${spec.info?.version ?? "?"}`;
+      const head = el("tr");
+      for (const h of ["Method", "Path", "Summary", "Tag", ""]) head.append(el("th", null, h));
+      table.append(head);
+      for (const [path, ops] of Object.entries(spec.paths || {})) {
+        for (const [method, op] of Object.entries(ops)) {
+          const tr = el("tr");
+          const m = el("td"); m.append(el("span", "method", method.toUpperCase())); tr.append(m);
+          tr.append(el("td", "mono", path));
+          tr.append(el("td", null, op.summary || op.description?.split("\n")[0] || ""));
+          tr.append(el("td", "muted", (op.tags || []).join(", ")));
+          const act = el("td");
+          const b = el("button", null, "use");
+          b.onclick = () => {
+            $("rMethod").value = method.toUpperCase();
+            $("rPath").value = path;
+            $("rBody").value = op.requestBody ? sampleFor(spec, op) : "";
+            $("rPath").focus();
+          };
+          act.append(b); tr.append(act);
+          table.append(tr);
+        }
+      }
+    } catch (e) {
+      $("specInfo").textContent = e.message;
+      if (e instanceof TypeError) showCors(e);
+    }
+  };
+
+  // A minimal example body from the spec's schema — enough to edit, not a
+  // full JSON-Schema walker.
+  function sampleFor(spec, op) {
+    const ref = op.requestBody?.content?.["application/json"]?.schema?.$ref;
+    if (!ref) return "{}";
+    const name = ref.split("/").pop();
+    const schema = spec.components?.schemas?.[name];
+    if (!schema?.properties) return "{}";
+    const out = {};
+    for (const [k, v] of Object.entries(schema.properties)) {
+      if (!(schema.required || []).includes(k)) continue;
+      out[k] = v.examples?.[0] ?? v.default ?? (v.type === "string" ? "" :
+               v.type === "integer" || v.type === "number" ? 0 :
+               v.type === "boolean" ? false : {});
+    }
+    return JSON.stringify(out, null, 2);
+  }
+
+  $("rSend").onclick = async () => {
+    const method = $("rMethod").value;
+    const path = $("rPath").value.trim();
+    let body;
+    if (method === "POST" || method === "PATCH") {
+      const raw = $("rBody").value.trim();
+      if (raw) {
+        try { body = JSON.parse(raw); }
+        catch (e) { $("rOut").className = "mono err"; $("rOut").textContent = "Body is not valid JSON: " + e.message; return; }
+      }
+    }
+    await into("rOut", method, path, body);
+  };
+
+  // ── Tabs & base URL ───────────────────────────────────────────────────
+  for (const b of document.querySelectorAll("nav button")) {
+    b.onclick = () => {
+      for (const o of document.querySelectorAll("nav button")) o.setAttribute("aria-selected", String(o === b));
+      for (const s of document.querySelectorAll(".tab")) s.hidden = s.id !== "tab-" + b.dataset.tab;
+    };
+  }
+  $("base").onchange = () => {
+    state.base = $("base").value.trim();
+    localStorage.setItem("agentsvc.base", state.base);
+    $("docslink").href = url("/docs");
+    ping();
+  };
+  $("ping").onclick = ping;
+
+  if (!sameOrigin) {
+    const b = $("corsWarn");
+    b.hidden = false;
+    b.innerHTML =
+      "This page is open as a <code>file://</code> URL, so every request to the service is " +
+      "cross-origin and the service sends no CORS headers. Run <code>python web/serve.py</code> " +
+      "and open the address it prints — that serves this page and proxies the API through one origin.";
+  }
+  ping();
+})();
+</script>
+</body>
+</html>

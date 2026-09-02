@@ -1,0 +1,96 @@
+[project]
+# The platform is agent-service; this is the Gemini CLI implementation of it.
+# Tail matches IMPLEMENTATION_NAME and the directory, family matches
+# agent-service-claude-python and agent-service-codex-python.
+name = "agent-service-gemini-python"
+version = "0.19.1"
+description = "HTTP access to Gemini CLI headless, satisfying the agent-service specification."
+authors = [
+    { name = "Chi Liu" }
+]
+# SPDX expression, PEP 639. Text in the repository's root `LICENSE`.
+license = "Apache-2.0"
+requires-python = ">=3.13"
+dependencies = [
+    # The specification as pydantic models -- shared, not copied. AS-24
+    # requires every implementation to serve the SAME document, and two
+    # hand-maintained copies cannot stay byte-identical.
+    #
+    # `[db]` for the same reason the other builds take it: persistence is a
+    # feature of `agent-service`, not of the agent.
+    #
+    # **It is NOT what makes resume work here, and an earlier version of this
+    # comment said it was.** GP-10 destroys the agent's own transcript on its
+    # first resume, so this build must hold a copy it controls -- but a copy in
+    # this service's own scratch directory satisfies `--session-file` (GP-11)
+    # perfectly well. A database buys continuity across a container restart,
+    # which is exactly what it buys on the other two builds. Persistence stays
+    # optional here.
+    "agent-spec[db]",
+    "fastapi>=0.141.1",
+    "python-dotenv>=1.2.2",
+    "uvicorn>=0.52.1",
+]
+
+[tool.uv.sources]
+agent-spec = { path = "../common/agent-spec", editable = true }
+
+# NO SDK DEPENDENCY, and that is the target rather than an omission. Gemini CLI
+# ships no Python package: the programmatic surface is the binary plus ACP over
+# stdio (GP-01). The agent is installed into the image with npm and driven as a
+# subprocess, so it is pinned in the Dockerfile rather than here.
+
+# **NO `[project.scripts]`, and the absence is deliberate.** This build shipped
+# `agent-service-spec` -- the AS-25/AS-29 pre-boot command -- until 0.19.0.
+# Every fact it printed is now published in this build's own OpenAPI document as
+# the `PrebootSpec` component, with the values pinned by `const`, so a consumer
+# reads them from an artifact it already depends on at build time instead of by
+# running a container. `docker inspect` carries the impl, the document version
+# and the schema revision, which is the key that finds the right document.
+
+[build-system]
+requires = ["uv_build>=0.11.27,<0.12.0"]
+build-backend = "uv_build"
+
+# uv_build derives the module path from the distribution name; the import
+# package is `agent_service` in every implementation, so it must be told.
+[tool.uv.build-backend]
+module-name = "agent_service"
+
+[dependency-groups]
+dev = [
+    "anyio>=4.14.2",
+    "httpx2>=2.9.1",
+    "pytest>=8.4.2",
+    "pytest-anyio>=0.0.0",
+    # Splits this suite across processes, as in the other two builds. `ci.py`
+    # passes `-n 4` unconditionally -- this build has nothing shared: no
+    # database, no `conftest.py`, no session- or module-scoped fixture in
+    # `tests/`, and no wall-clock assertion anywhere. It is the safest of the
+    # three to distribute.
+    #
+    # **AND IT BUYS NOTHING MEASURABLE, WHICH IS RECORDED SO NOBODY RE-RUNS IT.**
+    # The suite itself goes 16.4s -> 6.3s, but the `unit` stage does not move at
+    # all: 21.2s mean before (n=7), 21.3s after (n=12), against a +/-3s spread.
+    # That stage runs its suites concurrently and the machine is now CPU-bound,
+    # so these workers come out of the other two builds' share. This entry is
+    # here for CONSISTENCY across the three builds (user, 2026-08-17), not for
+    # the clock. Do not expect a fourth build to behave like the first two.
+    "pytest-xdist>=3.6.1",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+# THE DEFAULT RUN SPENDS NOTHING. `live` tests take a real turn against a real
+# model and cost real money; this deselects them unless someone asks for them by
+# name with `-m live`.
+#
+# On this target the caution is sharper than on the other two, and GP-32 is why:
+# the spike that produced this build was budgeted at "cents" and cost about
+# 10 USD, because a turn that cannot finish keeps calling `invoke_agent` for as
+# long as it is allowed to. A live test here caps its own runs.
+addopts = "-m 'not live' -q"
+markers = [
+    "live: takes a real turn against a real model. SPENDS MONEY. Deselected by default.",
+]

@@ -1,0 +1,45 @@
+# THIS IMPLEMENTATION'S. The platform root has its own for the things every
+# implementation would share (`__pycache__/`, `.venv`, `.env`); everything here
+# is anchored to a directory that only this implementation has, which is
+# precisely what cannot be written at the root -- a pattern containing a slash
+# is relative to the .gitignore file it appears in, so `workspace/*` up there
+# would never match `impl/claude-python/workspace/*`.
+
+# Agent sandbox
+# NOTE: "workspace/*" not "workspace/" -- git never descends into a directory
+# excluded by the directory form to evaluate a negation, so "!workspace/.gitkeep"
+# below would silently never take effect (confirmed with `git check-ignore -v`
+# during Task 11 verification).
+workspace/*
+!workspace/.gitkeep
+
+# Scratch space -- every temporary/throwaway directory belongs under here.
+# Same "temp/*" + negation form as the workspace block above; see that NOTE.
+temp/*
+!temp/.gitkeep
+
+# NOTHING under `schema/` is ignored. Every file there is written by
+# scripts/dump-schema.py, carries the version it was generated from in its name,
+# and is read by code -- so it is a versioned artifact, not scratch. Decision
+# 2026-08-06; this block previously ignored the directory and is kept only to say
+# why the rule reversed.
+#
+# What it used to say: these are derived, `alembic upgrade` and `/openapi.json`
+# are the sources of truth, and a stale committed copy is worse than none. It
+# offered its own escape hatch -- "if you would rather COMMIT them, delete this
+# block" -- and that is what happened.
+#
+# What it cost while it stood. The pattern was written `schema/`, UNANCHORED, so
+# it matched a directory of that name at EVERY depth, including `docs/schema/`
+# where the published OpenAPI documents lived. Measured 2026-08-06:
+# `git log --all -- '*openapi-*.json'` returned NOTHING. No released version's
+# document had ever been committed. AS-24 of the signed interface contract
+# promises every one of them is published, ST-14 has a consumer pin it, and R-20
+# settles ownership disputes against it -- and a fresh clone had none of them,
+# while both sides' conformance suites passed because each compared the served
+# document against a local file that happened to be sitting there.
+#
+# Staleness is the real objection to committing derived output, and the answer
+# to it is a test rather than an ignore rule: tests/test_api_meta.py pins the
+# OpenAPI document against what the app serves, and tests/test_migrations.py
+# pins the SQL against what the migrations render.
