@@ -3,7 +3,7 @@
   "info": {
     "title": "agent-service",
     "summary": "HTTP access to Gemini CLI headless (gemini-python).",
-    "version": "0.21.0"
+    "version": "0.22.0-snapshot"
   },
   "paths": {
     "/healthz": {
@@ -47,7 +47,7 @@
                 "example": {
                   "service": {
                     "spec": {
-                      "document_version": "0.21.0"
+                      "document_version": "0.22.0-snapshot"
                     },
                     "impl": {
                       "name": "gemini-python",
@@ -3614,7 +3614,7 @@
             "type": "string",
             "minLength": 1,
             "description": "The OpenAPI document this image serves -- this document. A `-snapshot` suffix means it can change under you.",
-            "const": "0.21.0"
+            "const": "0.22.0-snapshot"
           },
           "schema_revision": {
             "type": "string",

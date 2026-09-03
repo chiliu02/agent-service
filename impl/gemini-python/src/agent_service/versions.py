@@ -21,7 +21,7 @@ worth doing between a release being prepared and the tag being cut.
 from __future__ import annotations
 
 #: MUST equal `spec/VERSION`.
-DOCUMENT_VERSION = "0.21.0"
+DOCUMENT_VERSION = "0.22.0-snapshot"
 
 #: This build. MUST equal `pyproject.toml`'s `version`. Starts at 0.0.1 rather
 #: than at the document's number: the two streams are independent and this one

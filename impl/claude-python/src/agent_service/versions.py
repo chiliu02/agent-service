@@ -40,7 +40,7 @@ from __future__ import annotations
 #: The interface document this build implements. MUST equal `spec/VERSION`
 #: at the platform root -- pinned by
 #: `tests/test_api_meta.py::test_the_served_version_is_the_specification_document_version`.
-DOCUMENT_VERSION = "0.21.0"
+DOCUMENT_VERSION = "0.22.0-snapshot"
 
 #: This build. MUST equal `pyproject.toml`'s `version` -- pinned by
 #: `tests/test_api_meta.py::test_the_implementation_version_matches_the_package`.

@@ -14,9 +14,9 @@ existed twice — a canonical there and a delivery copy elsewhere — with a sha
 table and a byte comparison kept in step for nothing else. This holds one copy
 and there is nothing to compare it against.
 
-**`0.19.0`, `0.20.0` and `0.21.0` are the releases**; `spec/openapi/`
-carries a bare version only in the one commit a tag names, and main moves on to
-the next snapshot immediately after.
+**`0.19.0`, `0.20.0` and `0.21.0` are the releases**, and `spec/openapi/` now
+carries `0.22.0-snapshot`. It holds a bare version only in the one commit a tag
+names; main moves on to the next snapshot immediately after.
 Eighteen versions were cut before them under an older process and none of them is a release under this one;
 their documents are not carried in the working tree, nor in this repository's
 history. **Agent Harness depends on `>= 0.19.0` from now on** (user,
@@ -49,14 +49,30 @@ version can change. Git makes the rest impossible.
 
 | Version | Tag | Commit |
 |---|---|---|
-| `0.19.0` | `release-0.19.0` | `979450d68f8262a0a5d250ab5735e4f80a24b35b` |
-| `0.20.0` | `release-0.20.0` | `f7dbd5bda5bb9d715764a61525e141d1d175ac5e` |
+| `0.19.0` | `release-0.19.0` | `1666f74fce11f681294d88352c63f6a3d492a77f` |
+| `0.20.0` | `release-0.20.0` | `6ffe49c77bbf6a97e3f54097e777d0eb71da9567` |
+| `0.21.0` | `release-0.21.0` | `93c45ad4b4a8eb76cc263db16f19740affe41ef3` |
 
 **The row is written in the commit AFTER the one the tag names**, and it cannot be
 otherwise: it carries the commit's own hash. So the tag's tree does not contain
 its own row, and `freeze` reads the row from the working tree rather than from the
 tag — which is the direction that matters, since what it guards against is the tag
 moving afterwards.
+
+**These releases were cut before this repository was published, and each tag names
+a commit in THIS history rather than the one the cut originally produced.** The
+project is developed privately; that history is not carried here. `0.21.0`'s
+commit is the root of this history. The two before it are the roots this history
+had at earlier exports — still reachable through their own tags, no longer
+ancestors of anything.
+
+**What the tags guarantee is unchanged, and it was verified rather than
+asserted**: `spec/` at each `release-<version>` is byte-identical to what that cut
+produced — the documents, the DDL, `VERSION` and the conformance suite. That
+identity is the entire justification for publishing a rebuilt history instead of
+the original. What differs at those commits is outside `spec/`: the consumer
+correspondence is removed, because it carries a third party's internal
+infrastructure.
 
 ---
 
