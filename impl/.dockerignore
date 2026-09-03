@@ -1,0 +1,89 @@
+# Build context exclusions for EVERY implementation's image.
+#
+# **It lives here because the build context is `impl/`.** Both compose files
+# under `impl/*/` set `context: ..`, because `pyproject.toml` names
+# `../common/agent-spec` as a path dependency and a path outside the context
+# cannot be COPYed. Docker reads `<context>/.dockerignore` -- so an ignore file
+# inside an implementation directory is never read at all.
+#
+# **That is not hypothetical; it is what was happening.** This file's contents
+# were `impl/claude-python/.dockerignore` from Plan 4 until 2026-08-08, and were
+# silently dead from the moment Plan 8 step 1 moved the context up on
+# 2026-08-07. Measured before writing this file, with a one-line probe
+# Dockerfile against `impl/`:
+#
+#     #4 [internal] load .dockerignore
+#     #4 transferring context: 2B done          <- an EMPTY ignore list
+#     #6 transferring context: 792.05MB 30.2s   <- both .venv trees, and .env
+#
+# 792 MB and 30 s per build, and -- the part that matters -- the operator's real
+# `.env`, carrying a real `ANTHROPIC_API_KEY`, crossing to the daemon on every
+# build. It never reached a LAYER (each Dockerfile COPYs named paths only), but
+# the opening rule of the file this replaces was that the context must not carry
+# a secrets file, and it had stopped being true.
+#
+# Keep this list tight and explicit rather than a catch-all: the point is to
+# never let an image layer -- or the context -- carry the real secrets file or
+# multi-hundred-MB local directories that add nothing to a running service.
+#
+# **Patterns here are relative to `impl/`**, so a name that belongs to one
+# implementation is written with its directory, and anything common is written
+# with `**/`.
+
+# Version control
+# NOTE: dockerignore does not do gitignore's implicit any-depth match for a
+# bare name -- verified empirically (Plan 4, Task 1): "__pycache__/" alone only
+# matched the top-level dir and let src/agent_service/__pycache__ and
+# tests/__pycache__ through the build context. "**/" is applied to every
+# directory-name pattern below for that reason.
+.git/
+**/.git/
+
+# Python virtual environments and bytecode. The two `.venv` trees are most of
+# the 792 MB measured above: each carries its SDK's bundled native binary
+# (262 MiB for claude, 341 MiB for codex), which the image installs from a
+# wheel and must never receive from the host -- a Windows `.venv` holds
+# `codex.exe`.
+**/.venv/
+**/__pycache__/
+**/*.py[oc]
+**/.pytest_cache/
+
+# Agent sandbox / workspace content -- an image ships the code, not a particular
+# host workspace (that is bind-mounted at runtime, see each compose.yaml).
+**/workspace/*
+!**/workspace/.gitkeep
+
+# The Codex app-server's state directory: SQLite in WAL mode, an installation
+# id, an AUTH STORE holding a logged-in API key, and 65 unpacked files. Same
+# reasoning as `.env` below and then some -- this one holds a credential in a
+# form that does not look like one.
+**/codex-home/
+
+# Tooling directories not needed inside any image
+**/.superpowers/
+**/.claude/
+**/.idea/
+**/.mcp.json
+
+# Conversation transcripts. Gitignored, so they were not caught by the patterns
+# above, but they are exactly the kind of thing that must not end up in a layer:
+# a full session transcript of the work that built this service.
+**/docs/conversations/
+
+# Scratch. Same "*" + negation form as workspace above, and same reason:
+# nothing under here belongs in an image. Added 2026-08-06 when ci.py started
+# writing `temp/ci/env.db` -- a generated compose env file carrying a
+# (throwaway, loopback-only) Postgres password.
+**/temp/*
+!**/temp/.gitkeep
+
+# Secrets -- never let the real key enter an image layer OR the context.
+# NOTE: the negations below must keep their ".example"/".compose.example"
+# suffix. A bare "!**/.env" would silently un-ignore the real secrets file --
+# this exact mistake already happened once in .gitignore.
+**/.env
+**/.env.local
+**/.env.*.local
+!**/.env.example
+!**/.env.compose.example

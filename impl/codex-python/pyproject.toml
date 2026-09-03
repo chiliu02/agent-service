@@ -1,0 +1,88 @@
+[project]
+# The platform is agent-service; this is the OpenAI Codex implementation of it.
+# Tail matches IMPLEMENTATION_NAME and the directory, family matches
+# agent-service-claude-python and agent-service-conformance.
+name = "agent-service-codex-python"
+version = "0.20.0"
+description = "HTTP access to the OpenAI Codex SDK, satisfying the agent-service specification."
+authors = [
+    { name = "Chi Liu" }
+]
+# SPDX expression, PEP 639. Text in the repository's root `LICENSE`.
+license = "Apache-2.0"
+requires-python = ">=3.13"
+dependencies = [
+    # The specification as pydantic models -- shared, not copied. AS-24
+    # requires every implementation to serve the SAME document, and two
+    # hand-maintained copies cannot stay byte-identical.
+    # `[db]` -- this build persists (2026-08-08). The database half of the
+    # specification package: the ORM conforming to the published DDL, the
+    # queue, the repository. AS-30 makes that schema the platform's.
+    "agent-spec[db]",
+    "alembic>=1.18.5",
+    "fastapi>=0.141.1",
+    "openai-codex>=0.1.0",
+    "python-dotenv>=1.2.2",
+    "uvicorn>=0.52.1",
+]
+
+[tool.uv.sources]
+agent-spec = { path = "../common/agent-spec", editable = true }
+
+# **NO `[project.scripts]`, and the absence is deliberate.** This build shipped
+# `agent-service-spec` -- the AS-25/AS-29 pre-boot command -- until 0.19.0.
+# Every fact it printed is now published in this build's own OpenAPI document as
+# the `PrebootSpec` component, with the values pinned by `const`, so a consumer
+# reads them from an artifact it already depends on at build time instead of by
+# running a container. `docker inspect` carries the impl, the document version
+# and the schema revision, which is the key that finds the right document.
+
+[build-system]
+requires = ["uv_build>=0.11.27,<0.12.0"]
+build-backend = "uv_build"
+
+# uv_build derives the module path from the distribution name; the import
+# package is `agent_service` in every implementation, so it must be told.
+[tool.uv.build-backend]
+module-name = "agent_service"
+
+[dependency-groups]
+dev = [
+    "anyio>=4.14.2",
+    "httpx2>=2.9.1",
+    "pytest>=8.4.2",
+    "pytest-anyio>=0.0.0",
+    # Splits this suite across processes. It became the LONG POLE of `ci.py`'s
+    # `unit` stage on 2026-08-17, when the Claude suite got the same treatment
+    # and dropped below it -- and that stage runs its suites concurrently, so
+    # its floor is whichever suite is slowest.
+    #
+    # **What this suite spends is PROCESS LIFECYCLE, not compute** (CX-19).
+    # `test_sessions.py`'s fixture opens a real app-server per test and closes
+    # it again: measured, 13.4s of teardown across 20 tests, ~0.67s each. That
+    # is the cost workers actually remove.
+    #
+    # **Safe to distribute, unlike the Claude build's suite** -- which is why
+    # `-n` is passed unconditionally there and only under `-m "not postgres"`
+    # here... the other way round. This build HAS no database and no shared
+    # server: no `conftest.py`, no session- or module-scoped fixture anywhere in
+    # `tests/`, and every session takes its `CODEX_HOME` and its workspace from
+    # a per-test `tmp_path`. There is nothing for two workers to contend over.
+    "pytest-xdist>=3.6.1",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+# THE DEFAULT RUN SPENDS NOTHING. `live` tests take a real turn against a real
+# model and cost real money; this deselects them unless someone asks for them by
+# name with `-m live`.
+#
+# `.ci/ci.py` composes rather than replaces this when it passes its own `-m` --
+# a bare `-m "not postgres"` would REPLACE it, which is how the Claude build's
+# paid tests were silently re-selected for weeks (fixed 2026-08-08, guarded by
+# test_suite_integrity.py there). Do not add a `-m` here without reading that.
+addopts = "-m 'not live' -q"
+markers = [
+    "live: takes a real turn against a real model. SPENDS MONEY. Deselected by default.",
+]
