@@ -1,0 +1,378 @@
+# Compose stack for agent-service, OpenAI Codex implementation.
+#
+# This file is the outer security boundary. Codex applies its own kernel-level
+# sandbox per turn -- `options.py` maps every `permission_mode` onto a `Sandbox`
+# and never onto `full_access` -- so unlike the Claude build there IS an
+# in-agent boundary here. It is not the one to rely on: the sandbox is the
+# agent's own code enforcing the agent's own rules, and what stops a defect in
+# it reaching the host is that this container can only see what is mounted
+# below, and that the published port answers on loopback only.
+#
+# Variables come from a `.env` beside this file (compose reads it
+# automatically). `.env.compose.example` lists every one of them. Note that
+# `.env` is NOT injected wholesale into the container: only the keys listed
+# under `environment:` cross the boundary, each one explicitly.
+#
+# **Postgres is here, under the `persistence` profile**, so a plain `up` still
+# starts nothing but the service -- persistence is optional and a deployment
+# without it is supported, not degraded. It publishes no host port: the CI
+# overlay adds one for the out-of-band migration, and nothing else needs to
+# reach it.
+
+services:
+  agent-service:
+    # CONTEXT IS `impl/`, NOT THIS DIRECTORY, and that is load-bearing:
+    # `pyproject.toml` names `../common/agent-spec` as a path dependency, and a
+    # path outside the build context cannot be COPYed. Every COPY in the
+    # Dockerfile is therefore prefixed `codex-python/`.
+    #
+    # `impl/.dockerignore` is the ignore file for this build, because docker
+    # reads `<context>/.dockerignore` and the context is `impl/`. An ignore
+    # file in THIS directory would be silently unread -- which is exactly what
+    # happened to the Claude build's between 2026-08-07 and 2026-08-08.
+    build:
+      context: ..
+      dockerfile: codex-python/Dockerfile
+
+    # PID 1 becomes docker-init, with uvicorn as its direct child so SIGTERM
+    # still arrives.
+    #
+    # It is NOT here to reap the app-server: that is a direct child of uvicorn
+    # and asyncio waitpid()s it. What `init: true` reaps is ORPHANS -- a
+    # grandchild whose parent exited first -- and the agent runs shell commands,
+    # so anything it backgrounds is exactly that case. Measured by the Claude
+    # build against the identical process shape (3 permanent zombies without,
+    # 0 with); the mechanism is the process tree, not the SDK.
+    init: true
+
+    # THE MOST IMPORTANT LINE IN THIS FILE.
+    #
+    # "127.0.0.1:...", never "8001:8000". The bare form publishes on every host
+    # interface; combined with a shell-capable agent and no service
+    # authentication, that would hand container command execution to anyone on
+    # the LAN.
+    #
+    # **8001 on the host, not 8000, and that is not arbitrary.**
+    # `../claude-python/compose.yaml` publishes `127.0.0.1:8000:8000`, and the
+    # two builds are meant to be runnable side by side -- comparing them is
+    # most of why a second implementation exists. The CONTAINER port stays 8000
+    # in both: it is what the published document pins as `listen.port` and what
+    # a consumer on a Docker network connects to, so it must not move.
+    ports:
+      - "127.0.0.1:${HOST_PORT:-8001}:8000"
+
+    # **One bind mount, where the Claude build has two, and the difference is
+    # real rather than an oversight.**
+    #
+    #   /workspace   read-write  -> the thread's `cwd`, and the sandbox root
+    #
+    # There is no `/reference/<name>:ro` mount here because this build has
+    # nowhere to put one: a Codex thread takes a `cwd` and nothing else -- no
+    # `add_dirs` equivalent -- so a second mount would be invisible to the
+    # agent. `Settings.reference_dirs` is deliberately never read from the
+    # environment and `/v1/capabilities` publishes `reference_dirs: []`, which
+    # is the honest answer. Mounting one anyway would create the exact failure
+    # the Claude build's existence check exists to catch: files visible to
+    # `docker exec ls` and invisible to the agent.
+    #
+    # Mount the repository ROOT, not a subdirectory: mounting `repo/src` leaves
+    # `.git` outside the container and every git command fails with "not a git
+    # repository".
+    volumes:
+      - ${WORKSPACE_HOST_PATH:?set WORKSPACE_HOST_PATH in .env}:/workspace
+
+      # THE APP-SERVER'S STATE, and this build's own volume. It holds SQLite in
+      # WAL mode, an installation id, 65 unpacked skill files -- and the AUTH
+      # STORE that `login_api_key()` writes, which is why it is a named volume
+      # rather than a bind by default: a directory on the host holding a live
+      # API key is a thing an operator has to remember they created.
+      #
+      # It is NOT gated by `AGENT_SERVICE_REQUIRE_MOUNTS` (see
+      # config.verify_mounts): running without it works, and what is lost is
+      # only that threads and the login do not survive the container. That is a
+      # deployment choice.
+      #
+      # **Gemini could not do this**, which is why it is worth stating: Codex
+      # reads `CODEX_HOME`, so the path is ours to choose and therefore ours to
+      # mount. The Gemini assessment records that `$HOME/.gemini` has no
+      # override at all.
+      - codex-home:/codex-home
+
+    environment:
+      # Empty default rather than a required check: when it is missing the
+      # service refuses to boot with a message naming exactly what to set
+      # (config.verify_credentials), which is a better error than compose's.
+      #
+      # **Neither of these is read by the app-server.** Measured 2026-08-08:
+      # exporting a key into its process leaves `account()` null and every turn
+      # comes back 401. THIS SERVICE reads whichever is set and performs
+      # `login_api_key()` at session open -- so the names work, but through the
+      # service rather than through the SDK (CX-20).
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      CODEX_API_KEY: ${CODEX_API_KEY:-}
+
+      # Provenance, not authorisation: stamped on every SessionRecord so a
+      # consumer can tell which container created a session. Unprefixed on
+      # purpose -- it is set by whatever provisions the container, not by this
+      # service's own configuration.
+      AGENT_ID: ${AGENT_ID:-}
+
+      AGENT_SERVICE_WORKSPACE_DIR: /workspace
+      AGENT_SERVICE_CODEX_HOME: /codex-home
+
+      # PERSISTENCE, OPTIONAL. Empty means no database at all -- a supported
+      # configuration and the default.
+      #
+      # `Settings.from_env()` reads this once at startup. The Claude build POPS
+      # it from `os.environ` there, because its agent's subprocess inherits the
+      # environment and has a shell; the same is true here and this build owes
+      # the same pop (CX-34).
+      AGENT_SERVICE_DATABASE_URL: ${AGENT_SERVICE_DATABASE_URL:-}
+
+      # On, because the workspace is meant to come from the mount above and
+      # neither Docker nor compose checks that: measured on Docker Desktop for
+      # Windows, `-v`, `--mount type=bind` and even
+      # `bind: {create_host_path: false}` all CREATE a missing host directory
+      # and start anyway. Without this the failure is silent -- an empty
+      # /workspace that looks healthy and is discarded on stop.
+      AGENT_SERVICE_REQUIRE_MOUNTS: ${AGENT_SERVICE_REQUIRE_MOUNTS:-true}
+
+      # The escape hatch from the boot-time credential check, for docs-only use
+      # and for the container tests that must not spend money. Defaults to the
+      # secure value; you have to opt out on purpose.
+      #
+      # It has a second, Codex-only use the Claude build has no equivalent for:
+      # a mounted `codex-home` carrying a login from an earlier run is already
+      # authenticated with no variable set, and this gate cannot see that.
+      AGENT_SERVICE_REQUIRE_CREDENTIALS: ${AGENT_SERVICE_REQUIRE_CREDENTIALS:-true}
+
+      AGENT_SERVICE_MAX_SESSIONS: ${AGENT_SERVICE_MAX_SESSIONS:-4}
+
+      # **`AGENT_SERVICE_AUTH_TOKEN` is deliberately NOT forwarded**, and it is
+      # not an oversight to fix by adding a line. This build reads the variable,
+      # publishes `auth_required` from it, and enforces nothing -- so
+      # `config.verify_auth` refuses to boot when it is set, rather than serve
+      # an API that reports a protection it does not have. When bearer auth is
+      # implemented, that gate goes and this line becomes a forward.
+
+      # No ~/.gitconfig exists in the container, so `git commit` would fail with
+      # "Please tell me who you are". Supplied as environment rather than a
+      # mounted config so agent-authored commits are obvious in `git log`.
+      GIT_AUTHOR_NAME: ${GIT_AUTHOR_NAME:-agent-service}
+      GIT_AUTHOR_EMAIL: ${GIT_AUTHOR_EMAIL:-agent-service@localhost}
+      GIT_COMMITTER_NAME: ${GIT_COMMITTER_NAME:-agent-service}
+      GIT_COMMITTER_EMAIL: ${GIT_COMMITTER_EMAIL:-agent-service@localhost}
+
+      # ----------------------------------------------------------------------
+      # HOST-DEPENDENT GIT CONFIG. THE DEFAULTS BELOW ARE FOR A WINDOWS HOST.
+      # IF YOU COPY THIS FILE TO A LINUX OR WSL2 HOST, CHANGE BOTH.
+      # ----------------------------------------------------------------------
+      #
+      # These are the Claude build's measurements and they are about the MOUNT,
+      # not the SDK, so they transfer unchanged: Git for Windows sets
+      # `core.autocrlf=true` on the host, `~/.gitconfig` does not cross the
+      # mount, and the container's git therefore sees every line of every text
+      # file as changed (measured there: 53 files, 26,261 insertions and 26,261
+      # deletions). One `git add -A && git commit` by the agent then rewrites
+      # the repository's line endings into history. Docker Desktop's
+      # Windows->Linux translation also reports every mounted file as mode 0777,
+      # which git reads as a mode change on every tracked file.
+      #
+      # WHY GIT_CONFIG_* AND NOT `git config --system` IN THE IMAGE: REPO SCOPE
+      # BEATS SYSTEM SCOPE and `.git/config` is inside the mount. GIT_CONFIG_* is
+      # read AFTER every config file, so it is the only channel that wins.
+      #
+      # On a LINUX or WSL2 host set GIT_AUTOCRLF=input and GIT_FILEMODE=true.
+      #
+      # GIT_CONFIG_COUNT must equal the number of KEY_n/VALUE_n pairs. Git reads
+      # exactly that many and SILENTLY IGNORES the rest, so adding a pair
+      # without bumping the count fails invisibly.
+      GIT_CONFIG_COUNT: "2"
+      GIT_CONFIG_KEY_0: core.autocrlf
+      GIT_CONFIG_VALUE_0: ${GIT_AUTOCRLF:-true}
+      GIT_CONFIG_KEY_1: core.filemode
+      GIT_CONFIG_VALUE_1: ${GIT_FILEMODE:-false}
+
+    # The image inherits 11 setuid-root binaries from python:3.13-slim (`su`,
+    # `mount`, `passwd`, ...). Each is individually low-value against something
+    # that already runs commands -- root has no password, `mount` needs
+    # CAP_SYS_ADMIN -- but this container IS the boundary, so drop what is not
+    # needed. The port is 8000, so CAP_NET_BIND_SERVICE is not required either.
+    #
+    # **NOW MEASURED, and the paragraph that used to sit here was wrong in three
+    # of its four claims** (2026-08-09, real turns -- CX-01). It said the
+    # sandbox is "Landlock plus
+    # seccomp", that neither needs a capability, and that the expectation was
+    # therefore fine.
+    #
+    # It is **bubblewrap**, vendored inside the CLI package. It needs a USER
+    # NAMESPACE, and Docker's default seccomp profile gates
+    # `unshare(CLONE_NEWUSER)` on CAP_SYS_ADMIN. So:
+    #
+    #   * **The Codex sandbox does not start in this container**, and every
+    #     shell command dies with `bwrap: No permissions to create a new
+    #     namespace` before it runs. FAIL-CLOSED -- nothing executes unsandboxed.
+    #   * **`cap_drop: ALL` is NOT the cause.** It fails identically under
+    #     default Docker security. Removing these two lines would fix nothing.
+    #   * The only thing that fixes it is `seccomp=unconfined`. `cap_add:
+    #     SYS_ADMIN` does NOT -- it gets one step further and dies at
+    #     `pivot_root`, so the reflex fix is both weaker and more dangerous.
+    #
+    # **`cap_drop: ALL` stays and `seccomp=unconfined` is ADDED** (user,
+    # 2026-08-09). The trade, stated so it can be reversed by someone who
+    # disagrees:
+    #
+    #                        default profile (before)    seccomp=unconfined (now)
+    #   Codex sandbox        absent -- bwrap cannot start  works, confines to /workspace
+    #   Shell commands       NONE RUN AT ALL               run, sandboxed
+    #   Syscall filter       Docker's default              none
+    #
+    # **What decided it is that the left column is not the safe option, it is
+    # the broken one.** A container whose agent cannot execute anything is not a
+    # hardened agent service; it is a service missing its tool loop, and an
+    # operator who discovers that will reach for `--privileged` -- which gives
+    # up the filter AND the capabilities. Measured, the sandbox does real work
+    # once it can start: `workspace_write` wrote inside `/workspace` and was
+    # refused `/codex-home` (CX-02).
+    #
+    # **The capabilities are unaffected either way**, which is why they stay:
+    # `cap_drop: ALL` never blocked bwrap and dropping it would buy nothing.
+    # `no-new-privileges` likewise.
+    #
+    # **This is the ONE place this build is less hardened than claude-python**,
+    # and the reason is not a preference: that build's agent needs no user
+    # namespace, so it keeps the default profile and loses nothing. Do not
+    # "harmonise" the two files.
+    #
+    # Still verified and unchanged: the service boots, serves, and answers
+    # `/healthz` and `/v1/capabilities` with ALL capabilities dropped
+    # (2026-08-08).
+    security_opt:
+      - no-new-privileges:true
+      # See the block above. Removing this line does not harden the container in
+      # any way that matters -- it disables the agent's sandbox and its shell.
+      - seccomp=unconfined
+    cap_drop:
+      - ALL
+
+    # ONE MEASURED NUMBER AND ONE MISSING ONE, stated that way on purpose.
+    #
+    # Measured 2026-08-08 on this host: the container idles at **51.7 MiB and
+    # 1 pid** with no sessions. That is the baseline and it is smaller than the
+    # Claude build's (~59 MiB, 3 pids) because nothing is spawned until a
+    # session exists.
+    #
+    # **The marginal cost of a session is UNMEASURED**, and it is the number
+    # this arithmetic actually needs. Each session is one `codex app-server`
+    # subprocess -- a 298 MB native binary with SQLite in WAL mode behind it --
+    # and measuring it needs a turn, which needs credits this account does not
+    # have. The Claude build's 110 MiB/session is NOT transferable: different
+    # binary, different runtime.
+    #
+    # So 2048m is a CEILING, not a fit: it is roughly the Claude build's limit
+    # plus a margin for a larger binary's page cache, and its job is to turn an
+    # unbounded container on a shared host into a diagnosable exit 137. Revisit
+    # it with `docker stats` the first time this takes real turns; that is a
+    # measurement worth ten minutes.
+    #
+    # pids_limit 512 for the reason the Claude build gives: the agent runs
+    # commands that fan out hard (`make -j`, `npm install`, a test suite with
+    # workers), any of which can spend 50-100 pids inside a single session, and
+    # a limit that kills those mid-turn looks like a bug in the agent's command
+    # rather than a limit here. 512 still stops a fork bomb.
+    mem_limit: 2048m
+    pids_limit: 512
+
+    # ARITHMETIC, and a test fails if the three numbers stop agreeing:
+    #
+    #   stop_grace_period >= --timeout-graceful-shutdown (30s, Dockerfile CMD)
+    #                        + AGENT_SERVICE shutdown_budget_s (60s, config.py)
+    #                        + margin
+    #
+    # 100s = 30 + 60 + 10. Docker sends SIGTERM, waits this long, then SIGKILLs;
+    # two budgets run sequentially inside that window and only the first is
+    # uvicorn's -- the request drain (an in-flight SSE turn holds a request open
+    # for up to 30s), and THEN the lifespan shutdown, i.e. `close_all()`.
+    #
+    # **This was 60s and NOT arithmetic until 2026-08-10** (CX-38), because
+    # `close_all()` had no budget: it closed every session in turn, bounded only
+    # by the SDK's own ~3s per close, so 16 sessions could spend 48s of a window
+    # that also had to cover the drain. Now the sweep spends one aggregate
+    # budget and this number is derived from it rather than guessed against it.
+    stop_grace_period: 100s
+
+    # 127.0.0.1, not `localhost`: uvicorn binds 0.0.0.0 (IPv4 only) and
+    # `localhost` resolves to ::1 first inside this image.
+    #
+    # start_period is 15s against a measured cold start of ~2s to the first
+    # successful /healthz on this host -- ~7x headroom for a slow host or a cold
+    # mount, while start_interval keeps a fast one from sitting "starting".
+    # Failures during start_period do not count against `retries`, so a boot
+    # that legitimately fails (no credential) still reports unhealthy promptly.
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+      start_interval: 1s
+
+    # STATED EXPLICITLY, not left to the default, because the default IS this
+    # value and that makes it invisible -- an operator scanning the file cannot
+    # tell "deliberately no restart" from "nobody thought about it", and the
+    # obvious-looking edit (`restart: unless-stopped`) turns a permanent
+    # configuration error into a crash-loop.
+    #
+    # All three boot gates here are permanent configuration errors: no
+    # credential, an unmounted workspace, an auth token nothing can enforce.
+    # Retrying cannot fix any of them, and the one message an operator needs
+    # would scroll past repeatedly instead of sitting at the end of a stopped
+    # container's log.
+    #
+    # The cost is real and accepted: a genuine mid-life crash also stays down.
+    # This service holds live sessions in process memory -- a restart loses
+    # every one and their ids 404 afterwards -- so self-healing was never
+    # actually available here; it only looks that way.
+    restart: "no"
+
+  # --- persistence (Plan 9) --------------------------------------------------
+  # OPTIONAL, under a profile: `docker compose up agent-service` alone still
+  # runs with no database. Bring this up only when you want history, and set
+  # AGENT_SERVICE_DATABASE_URL to match.
+  postgres:
+    profiles: ["persistence"]
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: agent
+      POSTGRES_USER: postgres
+      # `:-` and NOT `:?`. A required-variable check fails `docker compose
+      # config`, `ps` and `logs` for EVERYONE, including anyone who never asked
+      # for persistence -- compose interpolates every service regardless of
+      # which profiles are active.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
+    volumes:
+      - codex-db:/var/lib/postgresql/data
+      # Runs ONCE, on an empty data directory. The role split every
+      # implementation needs, shared because three copies of a grant that must
+      # match what each service connects as is a drift waiting to happen.
+      - ../common/db/init:/docker-entrypoint-initdb.d:ro
+
+    # NOT published to the host. The service reaches it over the compose
+    # network; nothing outside needs to.
+
+    healthcheck:
+      # `-U postgres -d agent` explicitly: bare `pg_isready` checks the default
+      # database and reports ready before ours exists on first boot, which makes
+      # `depends_on: service_healthy` let the service start too early.
+      test: ["CMD-SHELL", "pg_isready -U postgres -d agent"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+    restart: "no"
+
+volumes:
+  # Named rather than a bind, because it holds a live API key. See the mount.
+  codex-home:
+  codex-db:

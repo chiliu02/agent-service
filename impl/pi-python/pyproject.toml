@@ -1,0 +1,87 @@
+[project]
+# The platform is agent-service; this is the Pi implementation of it.
+# Tail matches IMPLEMENTATION_NAME and the directory, family matches
+# agent-service-claude-python, -codex-python and -gemini-python.
+#
+# **The `-python` suffix carries more weight here than on the other three.** Pi
+# ships a TypeScript SDK, so `agent-service-pi-nodejs` is a coherent second
+# build of the SAME target -- it would publish this build's `model_api` and a
+# different `impl.name`, which is the case those two fields were separated for.
+name = "agent-service-pi-python"
+version = "0.24.0"
+description = "HTTP access to the Pi coding agent, satisfying the agent-service specification."
+authors = [
+    { name = "Chi Liu" }
+]
+# SPDX expression, PEP 639. Text in the repository's root `LICENSE`.
+license = "Apache-2.0"
+requires-python = ">=3.13"
+dependencies = [
+    # The specification as pydantic models -- shared, not copied. AS-24
+    # requires every implementation to serve the SAME document, and two
+    # hand-maintained copies cannot stay byte-identical.
+    #
+    # `[db]` for the same reason the other builds take it: persistence is a
+    # feature of `agent-service`, not of the agent. **It is not what makes
+    # resume work here** -- Pi keeps its own session store and honours
+    # `--session-dir`, so continuity across turns costs this build nothing. A
+    # database buys continuity across a container restart, as everywhere else.
+    "agent-spec[db]",
+    "fastapi>=0.141.1",
+    "python-dotenv>=1.2.2",
+    "uvicorn>=0.52.1",
+]
+
+[tool.uv.sources]
+agent-spec = { path = "../common/agent-spec", editable = true }
+
+# NO SDK DEPENDENCY, and here that is a DECISION rather than an absence. Pi
+# ships `@earendil-works/pi-coding-agent`, a real SDK -- in TypeScript. A Python
+# build cannot import it, so this one drives the binary and the agent is
+# installed into the image with npm and pinned in the Dockerfile.
+#
+# That is the seam a second build would move: `pi-nodejs` would use the SDK
+# in-process and share nothing with this tree but the specification.
+
+# **NO `[project.scripts]`.** The AS-25/AS-29 pre-boot facts are published in
+# this build's own OpenAPI document as the `PrebootSpec` component with values
+# pinned by `const`, so a consumer reads them from an artifact it already
+# resolves at build time instead of by running a container.
+
+[build-system]
+requires = ["uv_build>=0.11.27,<0.12.0"]
+build-backend = "uv_build"
+
+# uv_build derives the module path from the distribution name; the import
+# package is `agent_service` in every implementation, so it must be told.
+[tool.uv.build-backend]
+module-name = "agent_service"
+
+[dependency-groups]
+dev = [
+    "anyio>=4.14.2",
+    "httpx2>=2.9.1",
+    "pytest>=8.4.2",
+    "pytest-anyio>=0.0.0",
+    # Splits this suite across processes, as in the other three builds. This one
+    # has nothing shared: no database, no session- or module-scoped fixture, and
+    # no wall-clock assertion. Consistency across builds is the reason it is
+    # here (user, 2026-08-17); the gemini build measured that it buys no clock
+    # time in the `unit` stage, and nothing here suggests this build differs.
+    "pytest-xdist>=3.6.1",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+# THE DEFAULT RUN SPENDS NOTHING. `live` tests take a real turn against a real
+# model and cost real money; this deselects them unless someone asks for them by
+# name with `-m live`.
+#
+# The figure to keep in mind on this target is small and should stay small: the
+# whole investigation that produced this build cost 0.0201 USD across nine
+# turns, because every one of them pinned a cheap model and capped its own run.
+addopts = "-m 'not live' -q"
+markers = [
+    "live: takes a real turn against a real model. SPENDS MONEY. Deselected by default.",
+]
