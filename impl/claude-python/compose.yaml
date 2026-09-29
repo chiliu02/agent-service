@@ -1,0 +1,429 @@
+# Compose stack for agent-service (Plan 4, Task 3).
+#
+# This file is the security boundary. The service runs the agent with `Bash`
+# enabled and `permission_enforcement="none"` (see config.py), so nothing
+# in-process stops the agent from running arbitrary commands -- what stops it
+# is that the container can only reach what is mounted here, and that the
+# published port only answers on the host's loopback interface.
+#
+# Variables come from a `.env` beside this file (compose reads it
+# automatically). `.env.compose.example` lists every one of them. Note that
+# `.env` is NOT injected wholesale into the container: only the keys listed
+# under `environment:` below cross the boundary, each one explicitly.
+#
+# Postgres IS here, at the bottom, under the `persistence` profile -- so a plain
+# `up` still starts nothing but the service. (This comment said "deliberately
+# absent: plan 3 is skipped by decision" until 2026-07-30, long after plan 3
+# shipped.) It publishes no host port: the TESTS get their own database from
+# `tests/dbharness.py`, not from here.
+
+services:
+  agent-service:
+    # CONTEXT IS `impl/`, NOT THIS DIRECTORY, and that is load-bearing since
+    # `agent-spec` moved to `impl/common/`: a path dependency outside the build
+    # context cannot be COPYed, and the build fails with
+    # "Distribution not found at: file:///common/agent-spec".
+    # Every COPY in the Dockerfile is therefore prefixed `claude-python/`.
+    build:
+      context: ..
+      dockerfile: claude-python/Dockerfile
+
+    # PID 1 becomes docker-init. uvicorn stays its direct child, so SIGTERM
+    # still arrives (measured).
+    #
+    # This does NOT reap the agent subprocess, contrary to what this comment
+    # used to say. That process is a direct child of uvicorn and asyncio
+    # waitpid()s it either way -- measured with init:false and init:true, 6
+    # sessions created and deleted in each: ZERO zombies both times. What
+    # init:true does reap is ORPHANS, and there the difference is absolute:
+    # 3 grandchildren whose parent exited first left 3 PERMANENT zombies at
+    # ppid 1 under init:false, and none under init:true. `Bash` is in the
+    # default tool set, so anything the agent backgrounds is exactly that case.
+    # CP-088
+    init: true
+
+    # THE MOST IMPORTANT LINE IN THIS FILE.
+    #
+    # "127.0.0.1:8000:8000", never "8000:8000". The bare form publishes on
+    # every host interface; combined with an enabled `Bash` tool and no service
+    # authentication, that would hand container shell execution to anyone on
+    # the LAN. Verified in Task 3: the LAN address refuses the connection.
+    ports:
+      - "127.0.0.1:8000:8000"
+
+    # Two mounts with different modes, mapping onto two different SDK options
+    # (CP-085, Q8):
+    #
+    #   /workspace          read-write  -> ClaudeAgentOptions.cwd
+    #   /reference/<name>   read-only   -> an entry in add_dirs
+    #
+    # `:ro` is enforced by the kernel, not by the agent's cooperation: a write
+    # attempt fails with EROFS regardless of what tool makes it. Measured in
+    # Task 3 via a shell redirect, a Python open(), and mkdir -- all EROFS.
+    #
+    # Mount the repository ROOT, not a subdirectory: mounting `repo/src` leaves
+    # `.git` outside the container and every git command fails with "not a git
+    # repository".
+    #
+    # REFERENCE_NAME appears here and in AGENT_SERVICE_REFERENCE_DIRS below and
+    # is a single variable on purpose. The mount path and the add_dirs entry
+    # must match EXACTLY; when they drift, nothing errors -- the directory is
+    # simply invisible to Read/Glob/Grep and the agent reports it does not
+    # exist while `docker exec ls` shows the files. Deriving both from one
+    # variable makes that class of mistake unrepresentable.
+    volumes:
+      - ${WORKSPACE_HOST_PATH:?set WORKSPACE_HOST_PATH in .env}:/workspace
+      - ${REFERENCE_HOST_PATH:?set REFERENCE_HOST_PATH in .env}:/reference/${REFERENCE_NAME:-reference}:ro
+
+    environment:
+      # Empty default rather than a required check: when it is missing the
+      # service refuses to boot with a message naming exactly what to set
+      # (config.verify_credentials), which is a better error than compose's.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+
+      # PERSISTENCE, OPTIONAL. Empty means the service runs with no database at
+      # all -- a supported configuration, not a degraded one, and the default
+      # if you never set POSTGRES_PASSWORD.
+      #
+      # `config.get_settings()` POPS this out of os.environ at startup, before
+      # any session exists, because the agent's subprocess inherits this
+      # process's environment and has `Bash`. See that function and
+      # CP-130.
+      AGENT_SERVICE_DATABASE_URL: ${AGENT_SERVICE_DATABASE_URL:-}
+
+      # The CLI writes its own transcript to disk regardless of the mirror.
+      # Pointed at a tmpfs-backed path so it does not accumulate in the
+      # container's writable layer; the durable copy is the one in Postgres.
+      CLAUDE_CONFIG_DIR: /tmp/claude-config
+
+      AGENT_SERVICE_WORKSPACE_DIR: /workspace
+      AGENT_SERVICE_REFERENCE_DIRS: '["/reference/${REFERENCE_NAME:-reference}"]'
+
+      # On, because in a container both directories above are meant to come
+      # from the mounts below, and neither Docker nor compose checks that:
+      # measured on Docker Desktop for Windows, `-v`, `--mount type=bind` and
+      # even `bind: {create_host_path: false}` all CREATE a missing host
+      # directory and start anyway. Without this the failure is silent -- an
+      # empty /workspace that looks healthy, or a reference path the agent
+      # reports as nonexistent while `docker exec ls` shows the files.
+      AGENT_SERVICE_REQUIRE_MOUNTS: ${AGENT_SERVICE_REQUIRE_MOUNTS:-true}
+
+      # Forwarded explicitly, unlike the rest of config.py's settings, because
+      # this one is what makes the container observable at all and you should
+      # not have to edit this file to turn it up. `main.configure_logging()`
+      # applies it at the entrypoint; without any logging config the root
+      # logger has no handler and Python's last-resort handler DROPS
+      # everything below WARNING -- which is where the reaper's report and
+      # close_all()'s shutdown summary both live. Measured going missing in
+      # Task 6 and appearing in Task 7.
+      # CP-087
+      AGENT_SERVICE_LOG_LEVEL: ${AGENT_SERVICE_LOG_LEVEL:-INFO}
+
+      # The escape hatch from the boot-time credential check, for docs-only use
+      # and for the container tests that must not spend money. Defaults to the
+      # secure value; you have to opt out on purpose.
+      AGENT_SERVICE_REQUIRE_CREDENTIALS: ${AGENT_SERVICE_REQUIRE_CREDENTIALS:-true}
+
+      # OVERRIDES config.py's default of 8, DELIBERATELY, and it is paired with
+      # `mem_limit` below -- changing either without the other loses the point.
+      #
+      # A session is one long-lived `claude` subprocess (registry.py: each entry
+      # owns one), NOT one request and NOT one turn: it is spawned by
+      # POST /sessions and stays resident between turns until DELETE or until
+      # the reaper sweeps it at session_idle_ttl_s (1800s). So this number is
+      # "how many `claude` processes may exist in this container at once", and
+      # idle ones cost memory too.
+      #
+      # WHY 4 AND NOT 8. `mem_limit: 1536m` is the real bound, but a limit that
+      # only fires by OOM-killing is a bad primary control: the container exits
+      # 137 and, with `restart: "no"`, STAYS DOWN, taking every other live
+      # session with it. The session cap is the graceful version of the same
+      # bound -- it refuses with 429 and the caller can retry. Sized so it
+      # trips FIRST:
+      #
+      #   4 sessions ->  250 MiB baseline + 4 x 110 MiB =  690 MiB  (45% of limit)
+      #   8 sessions ->  250 MiB baseline + 8 x 110 MiB = 1130 MiB  (74% of limit)
+      #
+      # At 8 a runaway caller can walk the container to ~74% of the ceiling
+      # while the cap still reports headroom, and the remaining margin is the
+      # only thing absorbing subagent fanout -- which is UNMEASURED and is the
+      # weak point in all of this. Subagents (the agent's own `Task` tool) run
+      # INSIDE the session's existing subprocess, so they cost memory and pids
+      # while consuming NO cap slot: one session running three of them counts
+      # as 1 here but costs well above the measured 110 MiB. 4 leaves that
+      # slack; 8 spends it.
+      #
+      # WHY THIS IS HERE AND NOT IN config.py. 8 is the right library default
+      # (config.py:117) -- it is what the code is tested at and what a caller
+      # embedding this service gets. 4 is a DEPLOYMENT decision about THIS
+      # container on a host that may be running several of them. Raise it if
+      # you raise mem_limit; the arithmetic above is the thing to preserve.
+      AGENT_SERVICE_MAX_SESSIONS: ${AGENT_SERVICE_MAX_SESSIONS:-4}
+
+      # No ~/.gitconfig exists in the container, so `git commit` would fail with
+      # "Please tell me who you are". Supplied as environment rather than a
+      # mounted config so agent-authored commits are obvious in `git log`.
+      GIT_AUTHOR_NAME: ${GIT_AUTHOR_NAME:-agent-service}
+      GIT_AUTHOR_EMAIL: ${GIT_AUTHOR_EMAIL:-agent-service@localhost}
+      GIT_COMMITTER_NAME: ${GIT_COMMITTER_NAME:-agent-service}
+      GIT_COMMITTER_EMAIL: ${GIT_COMMITTER_EMAIL:-agent-service@localhost}
+
+      # ----------------------------------------------------------------------
+      # HOST-DEPENDENT GIT CONFIG. THE DEFAULTS BELOW ARE FOR A WINDOWS HOST.
+      # IF YOU COPY THIS FILE TO A LINUX OR WSL2 HOST, CHANGE BOTH.
+      # ----------------------------------------------------------------------
+      #
+      # WHAT: `core.autocrlf` decides whether git converts line endings between
+      # the index (always LF) and the working tree.
+      #
+      # WHY IT EXISTS: Git for Windows sets `core.autocrlf=true` in the HOST's
+      # global config, so a repo checked out on Windows has CRLF working files
+      # and an LF index. `~/.gitconfig` does not cross the mount, so with this
+      # unset the container's git (default `false` on Linux) sees EVERY LINE OF
+      # EVERY TEXT FILE as changed. Measured on this repo: 53 files, 26,261
+      # insertions and 26,261 deletions, ZERO mode changes. That is not
+      # cosmetic -- one `git add -A && git commit` by the agent, an entirely
+      # ordinary thing for it to run, rewrites the whole repository's line
+      # endings into history, visible from the host immediately. It also costs
+      # 12.5x on every `git status` (23.5 s vs 1.9 s on a 5000-file repo),
+      # because git re-hashes every file and can never mark the index up to
+      # date. `true` was measured to take the modified count to 0 and to write
+      # CRLF back to the host byte-identically to the host's own checkout.
+      #
+      # WHEN TO CHANGE IT: on a LINUX or WSL2 host the working tree is already
+      # LF and `true` would be actively wrong -- it would convert the host's
+      # files to CRLF on the next checkout. Set GIT_AUTOCRLF=input there (or
+      # `false`; `input` is the safer of the two if any file was ever touched
+      # by a Windows editor). NOTE that "move the repo into WSL2", which
+      # CP-082 recommends for performance, IS that case.
+      #
+      # WHY GIT_CONFIG_* AND NOT `git config --system` IN THE IMAGE: because
+      # REPO SCOPE BEATS SYSTEM SCOPE and `.git/config` is inside the mount.
+      # Task 5 measured exactly that on the baked `core.filemode false`: the
+      # value is present in /etc/gitconfig, `.git/config` says false too, and
+      # removing the system file entirely changed nothing -- the baked setting
+      # was doing no work at all, and on a Linux-cloned repo (whose
+      # `.git/config` says `filemode = true`) it was silently overridden and
+      # all 66 of 66 files came back as mode changes. GIT_CONFIG_* is read
+      # AFTER every config file, so it is the only channel that wins against a
+      # mounted `.git/config`. That is why `core.filemode` moved here too and
+      # is no longer baked into the Dockerfile.
+      #
+      # GIT_CONFIG_COUNT must equal the number of KEY_n/VALUE_n pairs. Git
+      # reads exactly that many and SILENTLY IGNORES the rest, so adding a pair
+      # without bumping the count fails invisibly -- `tests/test_config.py::
+      # test_the_compose_git_config_env_block_is_self_consistent` pins it.
+      GIT_CONFIG_COUNT: "2"
+      GIT_CONFIG_KEY_0: core.autocrlf
+      GIT_CONFIG_VALUE_0: ${GIT_AUTOCRLF:-true}
+
+      # `core.filemode` -- same host dependency, same mechanism. Docker
+      # Desktop's Windows->Linux translation reports every mounted file as mode
+      # 0777, which git reads as `100644 => 100755` on every tracked file (66
+      # of 66, measured). `false` is right for a Windows host. On a LINUX or
+      # WSL2 host the exec bit is real and `false` would HIDE genuine mode
+      # changes from the agent: set GIT_FILEMODE=true there.
+      GIT_CONFIG_KEY_1: core.filemode
+      GIT_CONFIG_VALUE_1: ${GIT_FILEMODE:-false}
+
+    # The image inherits 11 setuid-root binaries from python:3.13-slim (`su`,
+    # `mount`, `passwd`, ...). Each is individually low-value against something
+    # that already has a shell -- root has no password, `mount` needs
+    # CAP_SYS_ADMIN -- but this container IS the boundary, so drop what is not
+    # needed. Measured in Task 3: with ALL capabilities dropped the service
+    # boots, serves, spawns the SDK's subprocess, and git works; nothing needed
+    # adding back. The port is 8000, so CAP_NET_BIND_SERVICE is not required
+    # either.
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+    # DERIVED FROM max_sessions, NOT MEASURED AT THE CAP. Same status as
+    # stop_grace_period below: arithmetic over numbers that were measured
+    # singly, not an observation of the full house.
+    #
+    # `max_sessions: 8` (config.py) is a SESSION cap, not a memory cap, and
+    # until these two lines nothing bounded what those 8 sessions could take.
+    # Task 7 measured, with `docker stats` on one session:
+    #
+    #   idle, just booted                59.3 MiB    3 pids
+    #   one live session, mid-turn    355-368 MiB   20-21 pids
+    #   after DELETE, warm            243-247 MiB    3 pids
+    #
+    # so ~110 MiB and ~17 pids is the MARGINAL cost of a session, over a
+    # ~250 MiB warm baseline:
+    #
+    #   mem   250 MiB baseline + 8 x 110 MiB = 1130 MiB -> 1536m (~35% margin)
+    #   pids    3 baseline     + 8 x  17     =  139     ->  512  (see below)
+    #
+    # WHY THE BASELINE NEVER RETURNS TO 59 MiB: block I/O read for that run was
+    # 296 MB, which is the 262 MiB bundled `claude` binary being paged in, and
+    # cgroup accounting includes page cache. That component is RECLAIMABLE --
+    # the kernel evicts it under pressure rather than OOM-killing -- so 1536m
+    # is more headroom against real anonymous memory than it looks. It is also
+    # SHARED between containers of this image (same layer, same inodes), which
+    # is why running four of these does NOT cost 4 x 1536m of actual RAM even
+    # though it does cost 4 x 1536m of limit.
+    #
+    # pids_limit is 512 and not 139 ON PURPOSE, and it is the one number here
+    # likely to need raising. `Bash` is in the default tool set with
+    # permission_enforcement="none", so the agent legitimately runs things that
+    # fan out hard -- `make -j`, `npm install`, a test suite with workers. Any
+    # of those can spend 50-100 pids inside a SINGLE session, which 139 would
+    # kill mid-turn with a fork failure that looks like a bug in the agent's
+    # command rather than a limit here. 512 still stops a fork bomb, which is
+    # the threat this actually exists for given the tool set. If you see
+    # "Resource temporarily unavailable" or "fork: retry" in a turn's output,
+    # this line is the first thing to check.
+    #
+    # NOTE THE INTERACTION WITH `restart: "no"` BELOW. That comment already
+    # names OOM as a crash it deliberately does not self-heal, and mem_limit is
+    # what turns OOM from a host-level event into a container-level one: the
+    # container is SIGKILLed, exits 137, stays down, and
+    # `docker inspect --format '{{.State.OOMKilled}}'` says true. That is the
+    # intended trade -- an unbounded container on a shared host gets the HOST's
+    # OOM killer instead, which picks its victim by heuristic and may well kill
+    # something else entirely. A diagnosable 137 here beats an arbitrary kill
+    # somewhere else.
+    mem_limit: 1536m
+    pids_limit: 512
+
+    # DERIVED, NOT MEASURED. This has to cover TWO SEQUENTIAL budgets, and
+    # both of them are now bounds the code enforces:
+    #
+    #   1. uvicorn's request drain, bounded by `--timeout-graceful-shutdown 30`
+    #      in the Dockerfile CMD. An SSE turn is an in-flight request, so a
+    #      live turn holds this open for up to the full 30 s.
+    #   2. THEN the lifespan shutdown -- close_all() -- bounded by
+    #      AGENT_SERVICE_SHUTDOWN_BUDGET_S (config.py, 60 s by default).
+    #
+    #   stop_grace_period = 30 s drain + 60 s close_all() budget + 10 s margin
+    #                     = 100 s
+    #
+    # The margin is for uvicorn's own teardown and process exit, measured at
+    # ~1.5 s beyond close_all() in Task 4. `tests/test_config.py::
+    # test_the_compose_grace_period_follows_the_shutdown_budget` reads this
+    # number, the CMD's and config.py's and FAILS if the arithmetic stops
+    # holding -- so this cannot be changed without seeing the budget, or the
+    # budget without seeing this.
+    #
+    # WHAT CHANGED, and why 90 s was not good enough. close_all() used to be
+    # bounded only by max_sessions x each session's own timeout_s (8 x 600 s =
+    # 80 minutes), so no grace period could be justified -- 35 s was sized
+    # against (1) alone and WAS MEASURED FAILING: with one turn in flight,
+    # uvicorn spent 30.1 s draining, close_all() got 4.9 s of the 5.9 s it
+    # needed, Docker SIGKILLed at 35.0 s -- ExitCode 137, no "Application
+    # shutdown complete", CLI subprocess still alive, which is exactly the
+    # outcome the exec-form CMD exists to prevent. 90 s replaced it and was
+    # verified clean (36.73 s, ExitCode 143) but was still a guess against an
+    # unbounded sweep: 8 sessions x the 5.9 s measured wedged close is 47.3 s
+    # of shutdown, and a genuinely hung close is unbounded. The budget makes
+    # the sum finite; this line is now arithmetic over it.
+    #
+    # Lowering `--timeout-graceful-shutdown` to 5 also works (12.0 s, exit 143)
+    # but cancels any turn still running 5 s after SIGTERM, costing the caller a
+    # result. Draining generously and waiting longer is the better trade.
+    #
+    # CP-088
+    stop_grace_period: 100s
+
+    # 127.0.0.1, not `localhost`: uvicorn binds 0.0.0.0 (IPv4 only) and
+    # `localhost` resolves to ::1 first inside this image.
+    #
+    # start_period sized against measurement, not guess: import of
+    # agent_service.main is 628-650 ms with bytecode precompiled (it was
+    # 1569-1723 ms and variable before UV_COMPILE_BYTECODE=1), and a cold
+    # `up` on this Windows/WSL2 host reaches the first successful /healthz in
+    # ~2 s. 15 s is ~7x that headroom -- enough for a slow host or a cold bind
+    # mount, while start_interval keeps the container from sitting "starting"
+    # for a fixed period on a fast one.
+    #
+    # Failures during start_period do not count against `retries`, so a boot
+    # that legitimately fails (no credentials, Task 6) still reports unhealthy
+    # promptly rather than being masked.
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+      start_interval: 1s
+
+    # STATED EXPLICITLY, not left to the default, because the default IS this
+    # value and that makes it invisible -- an operator scanning the file cannot
+    # tell "deliberately no restart" from "nobody thought about it", and the
+    # obvious-looking edit (`restart: unless-stopped`, which most compose files
+    # carry) turns the measurement below into a crash-loop.
+    #
+    # The service refuses to boot without credentials and exits 3
+    # (uvicorn's STARTUP_FAILURE; measured in Task 6). That is a PERMANENT
+    # configuration error, not a transient one: retrying it cannot fix it. With
+    # `restart: unless-stopped` the container would re-exit every ~1.4 s
+    # forever, and the one message the operator needs -- config.py's
+    # verify_credentials text, which names ANTHROPIC_API_KEY and the escape
+    # hatch -- would scroll past repeatedly in `docker compose logs` instead of
+    # sitting at the end of a stopped container's log. Measured with
+    # `restart: on-failure`: 11 restarts and 12 copies of the message in 15 s.
+    #
+    # With no restart policy: ONE start, ONE message, `docker compose ps`
+    # showing `Exited (3)`, and `docker compose up` (foreground) returning
+    # exit 3 to the shell. That is the visible failure this wants.
+    #
+    # The cost is real and accepted: a genuine mid-life crash (OOM, a bug) also
+    # stays down rather than self-healing. This service holds live sessions in
+    # process memory -- a restart loses every one of them and the caller's
+    # session IDs 404 afterwards -- so silent self-healing was never actually
+    # available here; it only looks that way. If you run this under an external
+    # supervisor that alerts on exit, add a restart policy there, not here.
+    restart: "no"
+
+  # --- persistence (plan-03) -------------------------------------------------
+  # OPTIONAL. `docker compose up agent-service` alone still works and runs with
+  # no database, which is a supported configuration. Bring this up only when you
+  # want history, and set AGENT_SERVICE_DATABASE_URL to match.
+  #
+  # Under a profile so it is opt-in: without `--profile persistence` compose
+  # does not start it, so the default `up` is unchanged from plan-04.
+  postgres:
+    profiles: ["persistence"]
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: agent
+      POSTGRES_USER: postgres
+      # `:-` and NOT `:?`. A required-variable check here fails
+      # `docker compose config`, `ps` and `logs` for EVERYONE, including anyone
+      # who never asked for persistence -- compose interpolates every service
+      # in the file regardless of which profiles are active. That is exactly
+      # the trap CP-085 already records for the mount paths.
+      #
+      # Left empty, the postgres image itself refuses to initialise with
+      # "Database is uninitialized and superuser password is not specified",
+      # which is a clear message that appears only when you actually start it.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
+    volumes:
+      - agent-db:/var/lib/postgresql/data
+      # Runs ONCE, on an empty data directory. See the file for what that means
+      # when you edit it later.
+      - ../common/db/init:/docker-entrypoint-initdb.d:ro
+
+    # NOT published to the host. The agent-service container reaches it over the
+    # compose network; nothing outside needs to. A database that is only
+    # reachable by the one process that needs it is one fewer thing to secure.
+
+    healthcheck:
+      # `-U postgres -d agent` explicitly: bare `pg_isready` checks the default
+      # database and reports ready before ours exists on first boot, which makes
+      # `depends_on: service_healthy` let the service start too early.
+      test: ["CMD-SHELL", "pg_isready -U postgres -d agent"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+    # Same reasoning as the service above: a permanent configuration error
+    # should stay visible rather than crash-loop.
+    restart: "no"
+
+volumes:
+  agent-db:

@@ -1,0 +1,27 @@
+# THIS IMPLEMENTATION'S. The platform root has its own for the things every
+# implementation shares (`__pycache__/`, `.venv`, `.env`); everything here is
+# anchored to a directory only this implementation has, which is precisely what
+# cannot be written at the root -- a pattern containing a slash is relative to
+# the .gitignore file it appears in, so `workspace/*` up there would never match
+# `impl/codex-python/workspace/*`.
+
+# Agent sandbox
+# NOTE: "workspace/*" not "workspace/" -- git never descends into a directory
+# excluded by the directory form to evaluate a negation, so "!workspace/.gitkeep"
+# below would silently never take effect.
+workspace/*
+!workspace/.gitkeep
+
+# Scratch space -- every temporary/throwaway directory belongs under here.
+# Same "temp/*" + negation form as the workspace block above.
+temp/*
+!temp/.gitkeep
+
+# The Codex app-server's state directory, when running outside a container:
+# SQLite in WAL mode, an installation id, 65 unpacked skill files, and the AUTH
+# STORE that `login_api_key()` writes. **That last one is why this line is not
+# merely about noise** -- the directory holds a live API key in a file that does
+# not look like a secrets file. `Settings.codex_home` defaults to `./codex-home`
+# and `CodexSession.__init__` creates it, so a plain `uv run uvicorn` produces
+# it here.
+codex-home/
