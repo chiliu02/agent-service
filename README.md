@@ -1,6 +1,6 @@
 # agent-service
 
-**An HTTP contract for driving a local coding agent, and three implementations
+**An HTTP contract for driving a local coding agent, and four implementations
 that satisfy it.**
 
 You give it a workspace and a prompt over HTTP; it runs a real coding agent
@@ -8,7 +8,7 @@ against that workspace in a container and streams back what happened — message
 tool calls, token usage, cost. Multi-turn sessions, resumable, optionally
 persisted to Postgres.
 
-The point is that **the same thirteen `/v1` operations drive three different
+The point is that **the same thirteen `/v1` operations drive four different
 agents**. Swap the image and your client does not change:
 
 | Build | Agent | Notes |
@@ -16,6 +16,7 @@ agents**. Swap the image and your client does not change:
 | [`impl/claude-python`](./impl/claude-python/) | [Claude Agent SDK](https://github.com/anthropics/claude-agent-sdk-python) | The reference build |
 | [`impl/codex-python`](./impl/codex-python/) | OpenAI Codex SDK | Sandboxes every turn; the only one whose agent cannot reach the network |
 | [`impl/gemini-python`](./impl/gemini-python/) | Gemini CLI headless | **No SDK exists** — the agent is a Node program spawned per turn |
+| [`impl/pi-python`](./impl/pi-python/) | Pi (`@earendil-works/pi-coding-agent`) | The only one that fronts **more than one vendor**, chosen per request; a Node CLI spawned per turn, with no sandbox of its own |
 
 Where they genuinely cannot behave identically, they say so at runtime on
 `/v1/deployment` rather than differing silently.
@@ -27,16 +28,17 @@ side-by-side.
 > configuration from disk inside its container — memory files, skills,
 > subagents, commands, plugins, settings — and **no `RunOptions` field on any
 > build can supply that.** `setting_sources` switches it off on
-> `claude-python`, switches off half of it on `codex-python`, and does not
+> `claude-python`, switches off half of it on `codex-python`, does not
 > exist on `gemini-python`, where the workspace you mount is read on every
-> turn. Treat the container's disk as part of the deployment.
+> turn, and is refused on `pi-python`, which reads none of it on any turn.
+> Treat the container's disk as part of the deployment.
 > [`docs/capability-divergence.md` §3.1](./docs/capability-divergence.md#31-ambient-configuration--no-build-lets-the-api-replace-it-and-the-document-never-said-so)
 > is the table.
 
 > [!WARNING]
 > **This service exists to give a coding agent a shell, and it is not
-> hardened.** Authentication is optional and **off by default** on all three
-> builds. All three publish `permission_enforcement: "none"`, and it means three
+> hardened.** Authentication is optional and **off by default** on all four
+> builds. All four publish `permission_enforcement: "none"`, and it means four
 > different things across them. What confines the agent is the container and
 > your mount layout — nothing else.
 >
@@ -91,7 +93,7 @@ each build's OpenAPI document as `PrebootSpec.runs_as`.
 | `GET /v1/sessions/{id}/transcript` | what was said, if persistence is on |
 | `GET /v1/deployment` | **read this first** — what this build can and cannot do |
 
-## Why three builds and not one with three modes
+## Why four builds and not one with four modes
 
 The value here is that it wraps **the agent** — session lifecycle, the tool loop,
 permission plumbing — not the model API. Those differ per *product* far more than
@@ -108,7 +110,7 @@ one probe table and no new clause. What it cost was eleven fixes *in the new
 build*, which is the arrangement working as intended: the specification bends the
 implementation, never the reverse.
 
-**It is not about language.** All three targets are drivable from Python. A build
+**It is not about language.** All four targets are drivable from Python. A build
 is separate because its subject is separate.
 
 **A target must run LOCALLY, in our own container.** A managed cloud agent
@@ -120,7 +122,7 @@ capabilities.
 | | |
 |---|---|
 | [`spec/`](./spec/) | **The product.** Three directories — the HTTP contract, the DDL, the conformance suite — and exactly one version, the current one. **A release is a git tag**: `release-<version>` names an immutable commit, and CI checks on every run that every tag still points where the manifest says. |
-| [`impl/`](./impl/) | The three builds. Each has its own guide under `impl/<build>/docs/`, written for a client author. |
+| [`impl/`](./impl/) | The four builds. Each has its own guide under `impl/<build>/docs/`, written for a client author. |
 | [`impl/common/`](./impl/common/) | `agent-spec/` is the specification rendered as pydantic models, plus the database layer — it **names no build, and must not**. `db/` is the Alembic tree that generates `spec/database/`; `web/` is a dev console. |
 | [`.ci/ci.py`](./.ci/ci.py) | Everything this repository can check for free, in one command. [`docs/ci.md`](./docs/ci.md) is what it does and why. |
 | [`docs/`](./docs/) | Platform-level: CI, versioning, plans, security posture, capability divergence, the database model, running locally, deploying remotely. |
@@ -128,7 +130,7 @@ capabilities.
 ## Running the checks
 
 ```bash
-uv run --no-project python .ci/ci.py          # freeze, links, references, unit, container, gates
+uv run --no-project python .ci/ci.py          # freeze, artifacts, links, references, unit, container, gates
 uv run --no-project python .ci/ci.py --fast   # ... the four that need no Docker
 ```
 

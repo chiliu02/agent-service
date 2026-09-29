@@ -404,6 +404,39 @@ def agent_version(build: str, image: str) -> str:
                 check=False, quiet=True).strip() or "unknown"
 
 
+def _report_partial(summary: list[dict[str, str]], remaining: list[str],
+                    *, pushed: bool) -> None:
+    """What got done and what did not, printed on the way out of a failed run.
+
+    **Named per mode rather than always saying "pushed".** Without `--push`
+    nothing was published and calling the completed ones pushed would be a
+    second wrong answer stacked on the first.
+
+    **The not-done list includes the build that just failed**, which is the row
+    a reader most needs and the one a summary built from successes alone would
+    leave out.
+    """
+    verb = "PUSHED" if pushed else "BUILT"
+    done = [row["image"] for row in summary]
+    # **Both lists spelled the same way**, so they can be read against each
+    # other. `summary` carries full `<image>:<version>` refs and `remaining`
+    # carries bare build names, and a reader comparing two columns that name
+    # the same thing differently has to do the translation themselves --
+    # at the moment they are least inclined to.
+    not_done = []
+    for build in remaining:
+        try:
+            not_done.append(f"agent-service-{build}:{implementation_version(build)}")
+        except (OSError, KeyError):
+            not_done.append(build)
+    print("\n  --- stopped part way " + "-" * 48)
+    print(f"  {verb}:     {', '.join(done) if done else '(none)'}")
+    print(f"  NOT {verb}: {', '.join(not_done)}")
+    if pushed and done:
+        print("\n  The registry now holds part of this release. Ask it rather than")
+        print("  reading this list back: ci.py --stages artifacts is what checks it.")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--push", action="store_true",
@@ -431,13 +464,41 @@ def main() -> int:
         raise SystemExit(f"no such build: {args.only}")
 
     summary: list[dict[str, str]] = []
-    for build, extra in builds:
-        image = build_image(build, force=args.force)
-        if not args.skip_verify:
-            verify(build, image, extra)
-        digest = push(image) if args.push else ""
-        summary.append({"image": image, "digest": digest,
-                        "agent": agent_version(build, image)})
+    #: **What has NOT been done yet, so a failure can say so.**
+    #:
+    #: This loop stops at the first bad build, verify or push, which is right --
+    #: but `docker push` is chatty enough that a reader looking at the tail of
+    #: the output sees the failure and none of the partial state. A run that
+    #: pushed two of four images and stopped looked, from the last thirty lines,
+    #: exactly like a run that pushed nothing.
+    #:
+    #: The exit code was never the problem: `_run` raises `SystemExit` and the
+    #: process exits 1. What was missing is the SHAPE of the damage, in the one
+    #: place a reader is already looking.
+    remaining = [build for build, _ in builds]
+    try:
+        for build, extra in builds:
+            image = build_image(build, force=args.force)
+            if not args.skip_verify:
+                verify(build, image, extra)
+            digest = push(image) if args.push else ""
+            summary.append({"image": image, "digest": digest,
+                            "agent": agent_version(build, image)})
+            remaining.remove(build)
+    except BaseException as stopped:
+        # **BaseException, because SystemExit is not an Exception.** That is how
+        # every failure in here is raised, so catching `Exception` would print
+        # nothing for the case this exists for. Ctrl-C lands here too, and a
+        # partial state is exactly as worth printing when a human stopped it.
+        #
+        # **The cause is printed HERE rather than left to the interpreter**, so
+        # it lands above the summary instead of below it. Re-raising the original
+        # would put the reason after the shape of the damage, which reads
+        # backwards and buries the one line naming what went wrong.
+        if str(stopped):
+            print(f"\n{stopped}")
+        _report_partial(summary, remaining, pushed=args.push)
+        raise SystemExit(1) from stopped
 
     print("\n  --- for the availability note " + "-" * 40)
     for row in summary:

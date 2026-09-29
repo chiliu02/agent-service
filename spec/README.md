@@ -49,21 +49,37 @@ version can change. Git makes the rest impossible.
 
 | Version | Tag | Commit |
 |---|---|---|
-| `0.19.0` | `release-0.19.0` | `979450d68f8262a0a5d250ab5735e4f80a24b35b` |
-| `0.20.0` | `release-0.20.0` | `f7dbd5bda5bb9d715764a61525e141d1d175ac5e` |
-| `0.21.0` | `release-0.21.0` | `59c491353b421cb483fd7332ed45e874f3e4d53e` |
-| `0.22.0` | `release-0.22.0` | `a872f1f3159af69116d88feed6f9563bc0ea7149` |
-| `0.23.0` | `release-0.23.0` | `ec7614d3b68fe9e27672f989c69161d6afc6d992` |
-| `0.24.0` | `release-0.24.0` | `2a779974f5dad4a89f8159766cc59713a184e0c1` |
-| `0.25.0` | `release-0.25.0` | `aff5f5bd3500c1b86ac37ca63686a60df0b1b5ff` |
-| `0.26.0` | `release-0.26.0` | `c70e3adce63cdfb274e7ab6cb267a74030ef6902` |
-| `0.27.0` | `release-0.27.0` | `4d0e5caef221c99c2b225977a0c4b1b1525f52f1` |
+| `0.19.0` | `release-0.19.0` | `1666f74fce11f681294d88352c63f6a3d492a77f` |
+| `0.20.0` | `release-0.20.0` | `6ffe49c77bbf6a97e3f54097e777d0eb71da9567` |
+| `0.21.0` | `release-0.21.0` | `93c45ad4b4a8eb76cc263db16f19740affe41ef3` |
+| `0.22.0` | `release-0.22.0` | `c6561d1d9cd0d743dcc893a108b49a64c3062b94` |
+| `0.23.0` | `release-0.23.0` | `683eff41e02b8c9393557aa58413492f0226709a` |
+| `0.24.0` | `release-0.24.0` | `85a3e16f0368f38aa12f712006e1faf5a5af15fa` |
+| `0.25.0` | `release-0.25.0` | `b0ec3947befa8338a8e3779ffe996854c2bc29bd` |
+| `0.26.0` | `release-0.26.0` | `357ab9d742ca39cf98948cd494d18ea1399e89a6` |
+| `0.27.0` | `release-0.27.0` | `946f713b28d5f0ca1fbb3301a52d331637510f1c` |
+| `0.28.0` | `release-0.28.0` | `53ff427f64b6543fa11b87bbd56bbe853eea4cea` |
 
 **The row is written in the commit AFTER the one the tag names**, and it cannot be
 otherwise: it carries the commit's own hash. So the tag's tree does not contain
 its own row, and `freeze` reads the row from the working tree rather than from the
 tag — which is the direction that matters, since what it guards against is the tag
 moving afterwards.
+
+**These releases were cut before this repository was published, and each tag names
+a commit in THIS history rather than the one the cut originally produced.** The
+project is developed privately; that history is not carried here. `0.28.0`'s
+commit is the root of this history. Every release before it has a root of its own
+-- built at an earlier export, or at this one for the releases cut between two
+exports -- still reachable through its tag, and not an ancestor of anything.
+
+**What the tags guarantee is unchanged, and it was verified rather than
+asserted**: `spec/` at each `release-<version>` is byte-identical to what that cut
+produced — the documents, the DDL, `VERSION` and the conformance suite. That
+identity is the entire justification for publishing a rebuilt history instead of
+the original. What differs at those commits is outside `spec/`: the consumer
+correspondence is removed, because it carries a third party's internal
+infrastructure.
 
 ---
 

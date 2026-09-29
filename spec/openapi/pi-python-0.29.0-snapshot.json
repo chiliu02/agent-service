@@ -1,10 +1,9 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "Agent Service",
-    "summary": "HTTP access to the Claude Agent SDK.",
-    "description": "Runs the Claude Agent SDK behind an OpenAPI interface. Every SDK message is returned normalized so the agent loop is observable.",
-    "version": "0.28.0"
+    "title": "agent-service",
+    "summary": "HTTP access to Gemini CLI headless (pi-python).",
+    "version": "0.29.0-snapshot"
   },
   "paths": {
     "/healthz": {
@@ -13,7 +12,7 @@
           "meta"
         ],
         "summary": "Healthz",
-        "description": "Live report, never a gate. See `Health`'s field descriptions.\n\n`status` stays `\"ok\"` while `database_usable` is `false`, and that is a\ndecision rather than an oversight. The container healthcheck is\n`curl -fsS /healthz`, so it reads the status CODE: making a broken\ndatabase non-200 would have compose restart a service whose agent side\nis working, repeatedly, for as long as the database is down. Persistence\nis optional by construction -- `RunRecorder` may never raise, the writer\ndiscards rather than failing turns -- and the health of an optional\nsubsystem must not be able to take down the required one.\n\nThe probe is bounded (`HEALTH_PROBE_TIMEOUT_S`) for the same reason: a\ndatabase that hangs rather than refusing would otherwise hang this route\npast the healthcheck's own 5s timeout and produce the restart loop\nanyway, by a slower route.",
+        "description": "Liveness, plus a LIVE report on the credential.\n\nCredentials that disappear after boot do not stop a running service, so\nthis is read now rather than remembered from startup.",
         "operationId": "healthz_healthz_get",
         "responses": {
           "200": {
@@ -35,10 +34,11 @@
           "meta"
         ],
         "summary": "Deployment",
+        "description": "Every difference a client must act on (AS-32).\n\nRead this instead of branching on the image tag. If you find yourself\ndiffing two documents, that is a defect on this side.",
         "operationId": "deployment_v1_deployment_get",
         "responses": {
           "200": {
-            "description": "Successful Response",
+            "description": "This build's capabilities. **The example is real** -- every field in it except the deployment-dependent ones (`workspace_dir`, `limits`, `max_sessions`, `require_credentials`, `require_mounts`, `auth_required`, `allow_mcp_servers`, `default_model`, `reference_dirs`) is what a live instance returns, and a test pins that so it cannot drift. Those exceptions show this build's defaults; read the endpoint for an instance's own. **Three version strings read `x.y.z` and are not defaults but placeholders** -- `impl.version`, `sdk.version` and `sdk_version` move whenever this build does, and this document is frozen at a release, so a real value here would stop matching the service it describes. Read them from the endpoint, or from the image before it runs.",
             "content": {
               "application/json": {
                 "schema": {
@@ -47,100 +47,89 @@
                 "example": {
                   "service": {
                     "spec": {
-                      "document_version": "0.28.0"
+                      "document_version": "0.29.0-snapshot"
                     },
                     "impl": {
-                      "name": "claude-python",
+                      "name": "pi-python",
                       "version": "x.y.z"
                     },
                     "sdk": {
-                      "name": "claude-agent-sdk",
+                      "name": "pi-coding-agent",
                       "version": "x.y.z"
                     },
                     "sdk_version": "x.y.z"
                   },
                   "config": {
-                    "workspace_dir": "workspace",
+                    "workspace_dir": "/workspace",
                     "reference_dirs": [],
-                    "default_model": "claude-sonnet-5",
+                    "default_model": "unset",
                     "max_sessions": 8,
                     "require_credentials": true,
-                    "require_mounts": true,
+                    "require_mounts": false,
                     "auth_required": false,
-                    "allow_mcp_servers": true,
+                    "allow_mcp_servers": false,
                     "credential_sources": [
                       "ANTHROPIC_API_KEY",
-                      "ANTHROPIC_AUTH_TOKEN"
+                      "OPENAI_API_KEY",
+                      "GEMINI_API_KEY"
                     ],
-                    "provider_selectors": [
-                      "CLAUDE_CODE_USE_BEDROCK",
-                      "CLAUDE_CODE_USE_VERTEX",
-                      "CLAUDE_CODE_USE_FOUNDRY"
-                    ]
+                    "provider_selectors": []
                   },
                   "accepts": {
                     "permission_modes": [
                       {
                         "id": "default",
                         "name": "Default",
-                        "description": "Standard permission behaviour; prompts for dangerous operations. With no approval channel on /v1 a prompt cannot be answered, so in practice this denies what it would have asked about."
-                      },
-                      {
-                        "id": "acceptEdits",
-                        "name": "Accept edits",
-                        "description": "Auto-accept file edit operations."
-                      },
-                      {
-                        "id": "plan",
-                        "name": "Plan",
-                        "description": "Planning mode: no execution of tools."
-                      },
-                      {
-                        "id": "dontAsk",
-                        "name": "Do not ask",
-                        "description": "Never prompt; deny anything not pre-approved."
-                      },
-                      {
-                        "id": "bypassPermissions",
-                        "name": "Bypass permissions",
-                        "description": "Bypass all permission checks. **The container is still the boundary** -- this service runs with permission enforcement off and Bash enabled, so the checks this bypasses were not what confined the agent."
-                      },
-                      {
-                        "id": "auto",
-                        "name": "Auto",
-                        "description": "Present in the SDK's own permission-mode union and absent from its documentation, so what it does here is the SDK's behaviour and is not described by this service."
+                        "description": "The agent's only mode. Pi has no per-operation approval in headless use: its trust gate is binary and project-level, and non-interactive runs skip it entirely. What confines a turn here is the tool allowlist and the container -- nothing else."
                       }
                     ],
-                    "default_permission_mode": "dontAsk",
-                    "effort_levels": [
-                      "low",
-                      "medium",
-                      "high",
-                      "xhigh",
-                      "max"
-                    ],
-                    "setting_sources": [
-                      "user",
-                      "project",
-                      "local"
-                    ],
+                    "default_permission_mode": "default",
+                    "effort_levels": [],
+                    "setting_sources": [],
                     "default_allowed_tools": [
-                      "Read",
-                      "Write",
-                      "Edit",
-                      "Bash",
-                      "Glob",
-                      "Grep",
-                      "WebSearch",
-                      "WebFetch"
+                      "read",
+                      "write",
+                      "edit",
+                      "ls",
+                      "grep",
+                      "find"
                     ],
                     "always_disallowed_tools": [
-                      "AskUserQuestion"
+                      "ask_question"
                     ],
                     "unsupported_options": [
                       {
-                        "field": "setting_paths",
+                        "field": "effort",
                         "types": null,
+                        "values": null
+                      },
+                      {
+                        "field": "setting_sources",
+                        "types": null,
+                        "values": null
+                      },
+                      {
+                        "field": "max_budget_usd",
+                        "types": null,
+                        "values": null
+                      },
+                      {
+                        "field": "max_turns",
+                        "types": null,
+                        "values": null
+                      },
+                      {
+                        "field": "strict_mcp_config",
+                        "types": null,
+                        "values": [
+                          false
+                        ]
+                      },
+                      {
+                        "field": "system_prompt",
+                        "types": [
+                          "object"
+                        ],
                         "values": null
                       }
                     ],
@@ -149,47 +138,41 @@
                     "mcp": {
                       "transports": [
                         "stdio",
-                        "sse",
                         "http"
                       ],
                       "http_headers": "any",
-                      "server_name_pattern": null
+                      "server_name_pattern": "^[A-Za-z0-9][A-Za-z0-9-]*$"
                     },
-                    "limits": {
-                      "default_max_turns": 30.0,
-                      "max_allowed_turns": 200.0,
-                      "default_max_budget_usd": 2.0,
-                      "max_allowed_budget_usd": 10.0,
-                      "default_request_timeout_s": 600.0,
-                      "max_allowed_timeout_s": 1800.0
-                    }
+                    "limits": {}
                   },
                   "behaviour": {
                     "limits": {
+                      "turn_timeout_s": 600.0,
+                      "max_sessions": 8.0,
                       "session_idle_ttl_s": 1800.0
                     },
                     "mcp_tool_call": {
-                      "request_timeout_s": 60,
-                      "idle_timeout_s": 300,
-                      "total_timeout_s": 100000,
-                      "progress_resets_idle": true
+                      "request_timeout_s": null,
+                      "idle_timeout_s": null,
+                      "total_timeout_s": 60,
+                      "progress_resets_idle": false
                     },
                     "sandbox": {
                       "network_access": true,
                       "confines_writes_to_workspace": false
                     },
                     "permission_enforcement": "none",
-                    "model_usage_scope": "cumulative",
+                    "model_usage_scope": "per_turn",
                     "reports_cost_usd": true,
-                    "usage_counts_tool_calls": null,
-                    "turn_token_overhead": null,
+                    "usage_counts_tool_calls": false,
+                    "turn_token_overhead": 550.0,
                     "llm_correlation": {
-                      "header": "x-claude-code-session-id",
-                      "measured": true
+                      "header": null,
+                      "measured": false
                     },
                     "sdk_session_id_scope": "conversation",
-                    "resume_durability": "agent_local",
-                    "query_reports_sdk_session_id": false,
+                    "resume_durability": "store_volume",
+                    "query_reports_sdk_session_id": true,
                     "query_consumes_a_session_slot": false
                   }
                 }
@@ -226,6 +209,7 @@
           "sessions"
         ],
         "summary": "List Sessions",
+        "description": "**Answered from our own store, never from the agent** (`PI-09`).\n\n`--list-sessions` hides sessions that are still resumable and lists ones\nabout to be deleted, so it cannot answer this route truthfully.",
         "operationId": "list_sessions_v1_sessions_get",
         "responses": {
           "200": {
@@ -244,8 +228,8 @@
         "tags": [
           "sessions"
         ],
-        "summary": "Open a multi-turn session",
-        "description": "Returns the registry handle as `session_id`.\n\n**`sdk_session_id` on the response is populated at creation only when you supply `session_id` in the request.** Otherwise it is null until the first turn: the CLI does not mint its conversation id before then (measured). Supply one when you need the mapping to exist before the session makes its first model call.",
+        "summary": "Create Session",
+        "description": "Open a session. **A supplied `sdk_session_id` is HONOURED** (`PI-14`).\n\n`--session-id` is echoed back verbatim in the opening event, so a caller\nmay name the conversation rather than reading back an id this service\nminted. Two of the other three builds refuse this; publishing\n`allow_supplied_sdk_session_id: true` is what lets a client tell.",
         "operationId": "create_session_v1_sessions_post",
         "requestBody": {
           "content": {
@@ -269,7 +253,17 @@
             }
           },
           "400": {
-            "description": "Invalid options, a limit above its cap, or a `session_id` that is not a UUID or was sent together with `options.resume`",
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
             "content": {
               "application/json": {
                 "schema": {
@@ -279,7 +273,17 @@
             }
           },
           "429": {
-            "description": "max_sessions reached",
+            "description": "Too Many Requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
             "content": {
               "application/json": {
                 "schema": {
@@ -289,7 +293,7 @@
             }
           },
           "504": {
-            "description": "The session did not open in time",
+            "description": "Gateway Timeout",
             "content": {
               "application/json": {
                 "schema": {
@@ -341,34 +345,14 @@
             }
           },
           "404": {
-            "description": "No such session",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Problem"
                 }
               }
-            }
-          },
-          "500": {
-            "description": "The context-usage control request failed in a way the service does not classify -- including the SDK's own 60s control timeout",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "502": {
-            "description": "The context-usage control request could not be delivered",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
+            },
+            "description": "Not Found"
           },
           "422": {
             "description": "Request validation failed",
@@ -386,7 +370,8 @@
         "tags": [
           "sessions"
         ],
-        "summary": "Close a session and free its subprocess",
+        "summary": "Delete Session",
+        "description": "Close a session. **The transcript survives**, so a resume still works.",
         "operationId": "delete_session_v1_sessions__sid__delete",
         "parameters": [
           {
@@ -404,24 +389,24 @@
             "description": "Successful Response"
           },
           "404": {
-            "description": "No such session",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Problem"
                 }
               }
-            }
+            },
+            "description": "Not Found"
           },
           "500": {
-            "description": "The session could not be torn down; the subprocess may still be alive",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Problem"
                 }
               }
-            }
+            },
+            "description": "Internal Server Error"
           },
           "422": {
             "description": "Request validation failed",
@@ -439,8 +424,8 @@
         "tags": [
           "sessions"
         ],
-        "summary": "Change the model or permission mode",
-        "description": "Both fields are optional and an omitted field is left unchanged, so an empty body is a valid no-op. An omitted field is NOT forwarded as null: the SDK reads a null model as 'use the default', so doing that would silently reset it. Every other option is fixed for the session's lifetime.\n\n**A change takes effect immediately, including on a turn that is already in flight.** This is measured, not assumed: it applies at the very next inference of the turn currently draining, not from the next turn, so a mid-turn model change re-prices the remainder of that turn and its `model_usage` reports both models. It is safe -- the in-flight turn is not disturbed and still ends normally -- but expect `total_cost_usd` to move by more than the new model alone would suggest.",
+        "summary": "Update Session",
+        "description": "Change the model or the permission mode mid-session.\n\n**Omitted fields are never forwarded.** Both are passed to the agent per\nturn \u2014 `-m` and `--approval-mode` \u2014 so writing a null would mean sending\nthe flag with nothing behind it, which is not the same as leaving it\nalone.\n\n**The read-back is what a caller gets**, so it can see what was actually\ntaken rather than what it asked for.",
         "operationId": "update_session_v1_sessions__sid__patch",
         "parameters": [
           {
@@ -475,44 +460,14 @@
             }
           },
           "404": {
-            "description": "No such session",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Problem"
                 }
               }
-            }
-          },
-          "409": {
-            "description": "The session is closed",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "The agent did not answer the control request in time",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "502": {
-            "description": "The control request could not be delivered",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
+            },
+            "description": "Not Found"
           },
           "422": {
             "description": "Request validation failed",
@@ -532,7 +487,8 @@
         "tags": [
           "sessions"
         ],
-        "summary": "Send one turn and wait for it to complete",
+        "summary": "Send Turn",
+        "description": "One turn, run to completion.\n\n**A 409 and never a queue** if a turn is already running: the two callers\nwould otherwise receive each other's turns. **A 504 and never a 200 with\na flag** if the wall clock runs out \u2014 the timeout is enforced by killing\nthe process, which is the only way to end a turn on this interface\n(`PI-11`) -- the RPC one has a real `abort`.",
         "operationId": "send_turn_v1_sessions__sid__messages_post",
         "parameters": [
           {
@@ -567,62 +523,72 @@
             },
             "headers": {
               "x-sdk-session-id": {
-                "description": "The SDK's own conversation id for this turn -- the same value as `sdk_session_id` in the body, and the id the CLI sends as `x-claude-code-session-id` when it calls the model API. It is NOT a `/v1/sessions/{session_id}` path handle.\n\n**Present on a session's first turn too, streaming included.** Absent only when no id was ever seen -- a turn that produced no message at all. Treat it as optional.",
                 "schema": {
                   "type": "string"
-                }
+                },
+                "description": "The agent's own conversation id for this turn, echoed so a proxy or relay can recover it without parsing a body or scanning an SSE stream. **Present on the first turn**, including on the streaming route: this build gives the agent an id when it starts the turn, so there is no turn whose id is not yet known. It is absent only when a turn produced no id at all. **It identifies the TURN, not the conversation** -- on a resumed session this build's agent mints a new id every turn, so route on it but never key on it."
               }
             }
           },
           "404": {
-            "description": "No such session",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Problem"
                 }
               }
-            }
+            },
+            "description": "Not Found"
           },
           "409": {
-            "description": "A turn is already running, or the session is closed",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Problem"
                 }
               }
-            }
+            },
+            "description": "Conflict"
           },
           "500": {
-            "description": "The turn failed in a way the service does not classify",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Problem"
                 }
               }
-            }
+            },
+            "description": "Internal Server Error"
           },
           "502": {
-            "description": "The agent process failed",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Problem"
                 }
               }
-            }
+            },
+            "description": "Bad Gateway"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Service Unavailable"
           },
           "504": {
-            "description": "The turn exceeded its time budget",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Problem"
                 }
               }
-            }
+            },
+            "description": "Gateway Timeout"
           },
           "422": {
             "description": "Request validation failed",
@@ -642,8 +608,8 @@
         "tags": [
           "sessions"
         ],
-        "summary": "Send one turn, streaming each message as it arrives",
-        "description": "Server-Sent Events. Each `data:` line is one `AgentEvent`; the `event:` name is its type. A terminal `event: done` carries the turn summary with an empty `events` list.\n\n**Errors.** This route resolves the session and takes its turn *before* committing the response, so anything that goes wrong up to and including the turn's FIRST message is a real problem document with a real status code -- 404, 409, or 504 if the turn times out before producing anything. Only a failure from the second message onwards arrives in-band, as `event: error` carrying the same `Problem` body; no `done` frame follows it, so `done` vs. `error` is how a client tells a finished turn from a broken one.\n\nNote this differs from `/v1/query/stream`, which commits its 200 before the first message and therefore reports even a zero-message failure in-band.\n\n**`x-sdk-session-id`** is sent on the response, so a relay does not have to scan the body for it. It is available here precisely because this route reads the turn's first message before committing the response; `/v1/query/stream` cannot carry it.",
+        "summary": "Stream Turn",
+        "description": "One turn, as Server-Sent Events.\n\n**This route commits LATE, and `/v1/query/stream` commits early.** The\ndifference is deliberate and a client must know it: here the first event\nis awaited before the response is committed, so `404`, `409` and a\nfirst-event failure are real status codes. Only failures from the second\nevent onward arrive in-band as `event: error`.\n\nA healthy stream always ends with `event: done` carrying the same\n`RunResponse` the non-streaming route would have returned.",
         "operationId": "stream_turn_v1_sessions__sid__messages_stream_post",
         "parameters": [
           {
@@ -670,46 +636,40 @@
           "200": {
             "description": "Successful Response",
             "content": {
-              "text/event-stream": {}
+              "application/json": {
+                "schema": {
+                  "title": "Response Stream Turn V1 Sessions  Sid  Messages Stream Post"
+                }
+              }
             },
             "headers": {
               "x-sdk-session-id": {
-                "description": "The SDK's own conversation id for this turn -- the same value as `sdk_session_id` in the body, and the id the CLI sends as `x-claude-code-session-id` when it calls the model API. It is NOT a `/v1/sessions/{session_id}` path handle.\n\n**Present on a session's first turn too, streaming included.** Absent only when no id was ever seen -- a turn that produced no message at all. Treat it as optional.",
                 "schema": {
                   "type": "string"
-                }
+                },
+                "description": "The agent's own conversation id for this turn, echoed so a proxy or relay can recover it without parsing a body or scanning an SSE stream. **Present on the first turn**, including on the streaming route: this build gives the agent an id when it starts the turn, so there is no turn whose id is not yet known. It is absent only when a turn produced no id at all. **It identifies the TURN, not the conversation** -- on a resumed session this build's agent mints a new id every turn, so route on it but never key on it."
               }
             }
           },
           "404": {
-            "description": "No such session",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Problem"
                 }
               }
-            }
+            },
+            "description": "Not Found"
           },
           "409": {
-            "description": "A turn is already running, or the session is closed",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Problem"
                 }
               }
-            }
-          },
-          "504": {
-            "description": "The turn exceeded its time budget before its first message",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
+            },
+            "description": "Conflict"
           },
           "422": {
             "description": "Request validation failed",
@@ -729,8 +689,8 @@
         "tags": [
           "sessions"
         ],
-        "summary": "Ask a running turn to stop",
-        "description": "Returns immediately, and returns 200 whether or not there was anything to stop -- `interrupted` says which. Asking to stop a turn that has already finished is not an error: that race is unavoidable for any client.\n\n`interrupted: false` is NOT implied by `status`, and neither field can be derived from the other -- see `InterruptResult`.\n\nThe turn currently draining will end with `is_error: true` and `subtype: 'error_during_execution'` -- the SDK reports an interrupted turn identically to a failed one -- but its summary will carry `interrupted: true`, which is the only reliable way to tell the two apart.",
+        "summary": "Interrupt Session",
+        "description": "Stop a running turn. **Always 200 with a body**, never 204 or 409.\n\nA turn can finish between a client deciding to stop it and the request\narriving, and that race is unavoidable, so \"there was nothing to stop\"\nis reported in the body rather than as an error.\n\n**Interrupt here is a kill.** Neither interface registers a cancel verb\n(`PI-11`), so this is abrupt: expect no final event beyond what already\nreached you.",
         "operationId": "interrupt_session_v1_sessions__sid__interrupt_post",
         "parameters": [
           {
@@ -755,44 +715,34 @@
             }
           },
           "404": {
-            "description": "No such session",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Problem"
                 }
               }
-            }
+            },
+            "description": "Not Found"
           },
           "500": {
-            "description": "The control request failed in a way the service does not classify -- including the SDK's own 60s control timeout on a running turn, which this service does not bound",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Problem"
                 }
               }
-            }
+            },
+            "description": "Internal Server Error"
           },
           "502": {
-            "description": "The control request could not be delivered",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Problem"
                 }
               }
-            }
-          },
-          "504": {
-            "description": "The agent did not answer the control request in time",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
+            },
+            "description": "Bad Gateway"
           },
           "422": {
             "description": "Request validation failed",
@@ -812,7 +762,8 @@
         "tags": [
           "query"
         ],
-        "summary": "Run the agent to completion and return the full message stream",
+        "summary": "Run Query",
+        "description": "Run one turn to completion with no session.\n\n**Consumes no session slot**, which is published rather than assumed:\n`capabilities.query_consumes_a_session_slot` is `false`. It gets its own\nHOME and its own policy all the same \u2014 a one-shot turn is not a turn with\na smaller boundary.",
         "operationId": "run_query_v1_query_post",
         "requestBody": {
           "content": {
@@ -827,6 +778,14 @@
         "responses": {
           "200": {
             "description": "Successful Response",
+            "headers": {
+              "x-sdk-session-id": {
+                "description": "The agent's own conversation id for this turn, echoed so a proxy or relay can recover it without parsing a body or scanning an SSE stream. **Present on the first turn**, including on the streaming route: this build gives the agent an id when it starts the turn, so there is no turn whose id is not yet known. It is absent only when a turn produced no id at all. **It identifies the TURN, not the conversation** -- on a resumed session this build's agent mints a new id every turn, so route on it but never key on it.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -836,7 +795,17 @@
             }
           },
           "400": {
-            "description": "Invalid options or a limit above its cap",
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
             "content": {
               "application/json": {
                 "schema": {
@@ -846,7 +815,17 @@
             }
           },
           "502": {
-            "description": "The agent process failed",
+            "description": "Bad Gateway",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
             "content": {
               "application/json": {
                 "schema": {
@@ -856,7 +835,7 @@
             }
           },
           "504": {
-            "description": "The run exceeded its time budget",
+            "description": "Gateway Timeout",
             "content": {
               "application/json": {
                 "schema": {
@@ -883,8 +862,8 @@
         "tags": [
           "query"
         ],
-        "summary": "Run the agent, streaming each SDK message as it arrives",
-        "description": "Server-Sent Events. Each `data:` line is one `AgentEvent` and the `event:` name is its type (system, assistant, user, result, stream_event, rate_limit). A terminal `event: done` carries the `RunResponse` summary with an empty `events` list, since the events were already streamed. A failure mid-stream arrives as `event: error` carrying a `Problem` document.",
+        "summary": "Run Query Stream",
+        "description": "The same, as Server-Sent Events.\n\n**This route commits EARLY, and that is the whole difference from\n`/v1/sessions/{id}/messages/stream`.** The 200 is written before the\nfirst message exists, so **every** failure \u2014 including one that produces\nno events at all \u2014 arrives in-band as `event: error` rather than as a\nstatus code. A client that only checks the status here will read a\nfailed turn as a successful one.\n\nIt cannot be otherwise: there is no session to 404 on and no lock to 409\non, so there is nothing to learn before committing that would be worth\nwaiting for.",
         "operationId": "run_query_stream_v1_query_stream_post",
         "requestBody": {
           "content": {
@@ -900,15 +879,9 @@
           "200": {
             "description": "Successful Response",
             "content": {
-              "text/event-stream": {}
-            }
-          },
-          "400": {
-            "description": "Invalid options or a limit above its cap",
-            "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "title": "Response Run Query Stream V1 Query Stream Post"
                 }
               }
             }
@@ -931,8 +904,8 @@
         "tags": [
           "history"
         ],
-        "summary": "Read a session's stored transcript",
-        "description": "Oldest first, paginated. Reads STORED rows -- unlike `GET /v1/sessions/{sid}`, this issues no control request to the agent and cannot fail because the CLI is wedged.\n\n404 with `type: .../persistence-disabled` means the service has no database configured; 404 with the ordinary title means no such session was ever recorded.",
+        "summary": "Get Transcript",
+        "description": "A session's recorded events, oldest first.\n\n**Reads STORED rows and asks the agent nothing.** Every turn is its own\nprocess here (`PI-11`), so once a turn has ended there is nothing left to\nask \u2014 this route is the only way to see what happened after the fact,\nand without a database there is no way at all.",
         "operationId": "get_transcript_v1_sessions__sid__transcript_get",
         "parameters": [
           {
@@ -985,14 +958,14 @@
             }
           },
           "404": {
-            "description": "No such recorded session, or history is not enabled",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Problem"
                 }
               }
-            }
+            },
+            "description": "Not Found"
           },
           "422": {
             "description": "Request validation failed",
@@ -1012,7 +985,8 @@
         "tags": [
           "history"
         ],
-        "summary": "Read one stored run or turn",
+        "summary": "Get Run",
+        "description": "One recorded turn, by the id this service minted for it.\n\n**`run_id` is neither of the session ids.** It identifies a single turn,\nit is returned by nothing on the live path today, and it is discoverable\nfrom a transcript row \u2014 which is why an unknown one is a plain 404.",
         "operationId": "get_run_v1_runs__run_id__get",
         "parameters": [
           {
@@ -1037,14 +1011,14 @@
             }
           },
           "404": {
-            "description": "No such recorded run, or history is not enabled",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Problem"
                 }
               }
-            }
+            },
+            "description": "Not Found"
           },
           "422": {
             "description": "Request validation failed",
@@ -1525,7 +1499,7 @@
           "auth_required": {
             "type": "boolean",
             "title": "Auth Required",
-            "description": "Whether `/v1` requires `Authorization: Bearer <token>`. **This route never does**, so it is always answerable — the container healthcheck reads it, and an authenticated service whose healthcheck could not run would be permanently unhealthy.\n\n`false` means the deployment serves `/v1` to anyone who can reach the port, on a service whose documented capability is arbitrary shell execution. That is a supported configuration for a single-operator loopback deployment and nothing else. Put network isolation and a relay in front of it before a token."
+            "description": "Whether `/v1` requires `Authorization: Bearer <token>`. **This route never does**, so it is always answerable \u2014 the container healthcheck reads it, and an authenticated service whose healthcheck could not run would be permanently unhealthy.\n\n`false` means the deployment serves `/v1` to anyone who can reach the port, on a service whose documented capability is arbitrary shell execution. That is a supported configuration for a single-operator loopback deployment and nothing else. Put network isolation and a relay in front of it before a token."
           },
           "database_configured": {
             "type": "boolean",
@@ -2270,7 +2244,7 @@
           "outcome_recorded": {
             "type": "boolean",
             "title": "Outcome Recorded",
-            "description": "False when the run ended without the agent's own terminating result (the agent process crashed, exited early, or was killed). The events list may still be populated, but result, cost and usage are unavailable — this is not the same as a successful run that produced no output.",
+            "description": "False when the run ended without the agent's own terminating result (the agent process crashed, exited early, or was killed). The events list may still be populated, but result, cost and usage are unavailable \u2014 this is not the same as a successful run that produced no output.",
             "default": true
           },
           "result": {
@@ -3722,7 +3696,7 @@
             "type": "string",
             "minLength": 1,
             "description": "The OpenAPI document this image serves -- this document. A `-snapshot` suffix means it can change under you.",
-            "const": "0.28.0"
+            "const": "0.29.0-snapshot"
           },
           "schema_revision": {
             "type": "string",
@@ -3742,7 +3716,7 @@
                 "type": "string",
                 "minLength": 1,
                 "description": "The build. Same value as `deployment.service.impl.name`, and what a per-implementation table keys on.",
-                "const": "claude-python"
+                "const": "pi-python"
               },
               "version": {
                 "type": [
@@ -3765,14 +3739,15 @@
             "description": "Environment variables carrying a model credential for this build. Validate the variable you inject against this list before starting a container. Never empty: a build no credential could satisfy could not take a turn.",
             "const": [
               "ANTHROPIC_API_KEY",
-              "ANTHROPIC_AUTH_TOKEN"
+              "OPENAI_API_KEY",
+              "GEMINI_API_KEY"
             ]
           },
           "model_api": {
             "type": "string",
             "minLength": 1,
             "description": "The target family this build drives, reached through this build's own `credential_sources` and `endpoint_source`. A consumer relaying to a vendor carries one mapping: `claude` is the Anthropic API, `codex` the OpenAI API, `gemini` the Gemini API. **Not a restatement of `impl.name`**, which carries the implementation language -- a second build driving the same target in another language publishes the same `model_api` and a different `impl.name`.",
-            "const": "claude"
+            "const": "pi"
           },
           "provider_selectors": {
             "type": "array",
@@ -3781,11 +3756,7 @@
               "minLength": 1
             },
             "description": "Environment variables that move this build onto a cloud provider -- Bedrock, Vertex, Foundry, GCA. **Never treat one as a credential.** An operator engaging one has changed something `model_api` does not claim to cover. Empty is a truthful answer for a build whose agent has no such switches.",
-            "const": [
-              "CLAUDE_CODE_USE_BEDROCK",
-              "CLAUDE_CODE_USE_VERTEX",
-              "CLAUDE_CODE_USE_FOUNDRY"
-            ]
+            "const": []
           },
           "auth_enforced": {
             "type": "boolean",
@@ -3796,7 +3767,7 @@
             "type": "string",
             "minLength": 1,
             "description": "The one environment variable that redirects this image's model traffic. **Singular, not a list**, because a consumer choosing from a list is a consumer guessing. Names a VARIABLE, never a URL, and is not derivable from `credential_sources`.",
-            "const": "ANTHROPIC_BASE_URL"
+            "const": "HTTPS_PROXY"
           },
           "gateway_map_source": {
             "type": [
@@ -3814,7 +3785,8 @@
               "variable": {
                 "type": "string",
                 "minLength": 1,
-                "description": "The environment variable the map is delivered under. Its value is a JSON object keyed by provider name, each entry `{\"base_url\": \"https://...\", \"headers\": {\"name\": \"value\"}}` -- `headers` optional, and delivered on every request to that provider. **A malformed value is a boot refusal, never an empty map**: an operator who sets this expects every turn behind their gateway, and falling back to unfronted would send the container's own credential to the vendor."
+                "description": "The environment variable the map is delivered under. Its value is a JSON object keyed by provider name, each entry `{\"base_url\": \"https://...\", \"headers\": {\"name\": \"value\"}}` -- `headers` optional, and delivered on every request to that provider. **A malformed value is a boot refusal, never an empty map**: an operator who sets this expects every turn behind their gateway, and falling back to unfronted would send the container's own credential to the vendor.",
+                "const": "AGENT_SERVICE_PROVIDER_GATEWAYS"
               },
               "provider_ids": {
                 "type": "array",
@@ -3823,18 +3795,25 @@
                   "minLength": 1
                 },
                 "minItems": 1,
-                "description": "**The keys to write, and they are the AGENT's ids rather than this platform's words.** A key here is the provider segment of `RunOptions.model` -- what precedes the `/` -- and the service compares the two directly, so a map keyed on anything else refuses every turn it was built to front. Listed because the two vocabularies do not line up and only one side can see the agent: `model_api` is the family this build drives and is not a key. **This is the set reachable with the published `credential_sources`, not the agent's whole catalogue**, which is larger and grows with the bundled agent. Moving this list costs a document version like every other value here."
+                "description": "**The keys to write, and they are the AGENT's ids rather than this platform's words.** A key here is the provider segment of `RunOptions.model` -- what precedes the `/` -- and the service compares the two directly, so a map keyed on anything else refuses every turn it was built to front. Listed because the two vocabularies do not line up and only one side can see the agent: `model_api` is the family this build drives and is not a key. **This is the set reachable with the published `credential_sources`, not the agent's whole catalogue**, which is larger and grows with the bundled agent. Moving this list costs a document version like every other value here.",
+                "const": [
+                  "anthropic",
+                  "google",
+                  "openai"
+                ]
               },
               "agent_appends_api_suffix": {
                 "type": "boolean",
-                "description": "Whether the AGENT adds its own API path to `base_url`. `true` means the base URL must carry none: a URL ending `/v1` produced `/v1/v1/messages` when this was measured, and the gateway saw a path it does not serve."
+                "description": "Whether the AGENT adds its own API path to `base_url`. `true` means the base URL must carry none: a URL ending `/v1` produced `/v1/v1/messages` when this was measured, and the gateway saw a path it does not serve.",
+                "const": true
               },
               "unconfigured_provider": {
                 "enum": [
                   "refused",
                   "direct"
                 ],
-                "description": "What a request naming a provider with NO entry does. `refused` is a 400 naming the provider; `direct` means it leaves the container for its vendor with no gateway in front of it, carrying the container's own credential. **Enumerated because the set really is closed** -- a request either leaves or it does not."
+                "description": "What a request naming a provider with NO entry does. `refused` is a 400 naming the provider; `direct` means it leaves the container for its vendor with no gateway in front of it, carrying the container's own credential. **Enumerated because the set really is closed** -- a request either leaves or it does not.",
+                "const": "refused"
               }
             },
             "description": "How a gateway is put in front of this build's model traffic, for a consumer that holds the account credential and counts every relayed call. **Distinct from `endpoint_source`, and needed because a proxy cannot be a gateway**: behind `CONNECT` an intermediary sees a host name and then ciphertext, so it can neither swap a credential nor read a response to count it. This names a map instead -- a base URL per provider, reached over plain HTTP, so the request arriving says which vendor it is for. `null` is a real answer and means this build has one base-URL variable already, so a map would have nothing to key on; it differs from the field being absent, which means nobody looked."
@@ -3855,7 +3834,7 @@
                 "type": "string",
                 "minLength": 1,
                 "description": "The environment variable an additional certificate authority is delivered under. A name, never a path: the path is the consumer's to choose.",
-                "const": "SSL_CERT_FILE"
+                "const": "NODE_EXTRA_CA_CERTS"
               },
               "shape": {
                 "enum": [
@@ -3897,7 +3876,7 @@
                 "type": "string",
                 "minLength": 1,
                 "description": "Where the home is when the variable is unset -- the in-container path, so a mount can be decided before anything is started. **Not a promise that it survives**: whether the shipped compose puts a volume on it is a deployment fact, and a consumer that needs the directory to outlive a container mounts it rather than assuming.",
-                "const": "/home/agent/.claude"
+                "const": "/var/lib/agent-service/agent-dirs"
               },
               "scope": {
                 "enum": [
@@ -3905,7 +3884,7 @@
                   "per_session_root"
                 ],
                 "description": "**Whether the named directory IS the home, or the parent of many.** `service` means one home for the whole service: what is placed there is read by the agent, and what the agent writes stays. `per_session_root` means the agent's home is a CHILD of it, created empty when a session opens and removed when it closes -- so a file placed at the named path is one level above every home the agent ever sees and is read by nothing. Use `seed_source` to reach those homes. **Enumerated because the set really is closed** -- a directory either is the home or contains them.",
-                "const": "service"
+                "const": "per_session_root"
               },
               "holds_credentials": {
                 "type": "boolean",
@@ -3922,16 +3901,25 @@
                   "in_home": {
                     "type": "boolean",
                     "description": "Whether conversations live under the home. When `false` they have a variable and a default of their own, published here, and moving the home does not move them.",
-                    "const": true
+                    "const": false
                   },
-                  "path": {
+                  "variable": {
                     "type": [
                       "string",
                       "null"
                     ],
                     "minLength": 1,
-                    "description": "The subdirectory of the home that holds conversations, when `in_home` is true. Published so a consumer can mount it INSTEAD of the home -- which is what a build with `holds_credentials: true` calls for.",
-                    "const": "projects"
+                    "description": "The environment variable moving the conversation store, when `in_home` is false.",
+                    "const": "AGENT_SERVICE_SESSION_STORE"
+                  },
+                  "default_path": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "minLength": 1,
+                    "description": "Where that store is when its variable is unset.",
+                    "const": "/var/lib/agent-service/sessions"
                   }
                 }
               },
@@ -3941,7 +3929,8 @@
                   "null"
                 ],
                 "minLength": 1,
-                "description": "The environment variable naming a directory whose contents are copied into each home before the agent starts. **Non-null only where `scope` is `per_session_root`**: a service-scoped home is written directly and needs no seed, and a per-session home cannot be written directly because it does not exist until a session opens. `null` means this build has no seed and needs none. **File modes are NOT carried across**: every copied file is created writable by the agent, so a seed directory mounted read-only still yields a home the agent can write."
+                "description": "The environment variable naming a directory whose contents are copied into each home before the agent starts. **Non-null only where `scope` is `per_session_root`**: a service-scoped home is written directly and needs no seed, and a per-session home cannot be written directly because it does not exist until a session opens. `null` means this build has no seed and needs none. **File modes are NOT carried across**: every copied file is created writable by the agent, so a seed directory mounted read-only still yields a home the agent can write.",
+                "const": "AGENT_SERVICE_AGENT_HOME_SEED"
               },
               "seed_reserved_paths": {
                 "type": "array",
@@ -3950,7 +3939,10 @@
                   "minLength": 1
                 },
                 "description": "Paths, relative to the home, that this service writes AFTER laying the seed down -- so a seeded file at one of them is overwritten wholesale, never merged. **Empty where `seed_source` is null**, and otherwise the complete list. Published so a consumer composing a seed can refuse a configuration that lands on one, at composition time and by name, rather than discovering it as a preference that silently did not apply. The ordering is deliberate and is not going to change: these files are what confine the agent and what route its model traffic, so a seed that could replace them would let whoever composes it widen a session's tool policy. Requested by Agent Harness (2026-09-15).",
-                "const": []
+                "const": [
+                  "models.json",
+                  "mcp.json"
+                ]
               },
               "read_on_resume": {
                 "enum": [
@@ -3959,7 +3951,7 @@
                   "never"
                 ],
                 "description": "What a RESUMED turn reads from the home, as opposed to the first turn of a conversation. `always` means a resume is an ordinary turn and the whole home applies. `settings_only` means the home's `settings.json` is passed to the agent explicitly and the rest of the home -- directory-discovered skills, agents, commands -- is not read, because the resume runs somewhere the service does not choose. **It is a FLOOR, not a deployment-exact answer**: the value is pinned per build and cannot vary with configuration, so a build whose resume only diverges when a database is configured publishes the narrower answer rather than the one that is true of some deployments. Reading it as the guaranteed minimum is always correct. Requested by Agent Harness (2026-09-15), which needed the divergence published because it cannot be detected from outside a container.",
-                "const": "settings_only"
+                "const": "always"
               }
             },
             "description": "Where this build's bundled agent keeps its OWN state -- the user-level configuration it reads and the conversations it writes -- and the one variable that moves it. **An object rather than a name**, because `scope` is the half a name cannot carry: two of these builds mint a home per session under the named directory, so relocating it delivers configuration to nothing and the failure is silent. Asked for by Agent Harness (2026-09-14), which wants to place a user's ambient configuration where the agent reads it and had measured the paths without being able to see that distinction."

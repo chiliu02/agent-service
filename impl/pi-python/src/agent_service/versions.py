@@ -13,7 +13,7 @@ where something reads the original and compares.
 from __future__ import annotations
 
 #: MUST equal `spec/VERSION`.
-DOCUMENT_VERSION = "0.28.0"
+DOCUMENT_VERSION = "0.29.0-snapshot"
 
 #: This build. MUST equal `pyproject.toml`'s `version`. **0.1.0 is its first
 #: DELIVERED version**, cut with document 0.22.0; it sat at 0.0.1 while nothing
