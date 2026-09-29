@@ -1,0 +1,195 @@
+# The shipped way to run this build. `docker compose up -d --build --wait`.
+#
+# **`--wait` is not optional and the reason is measured**: a plain
+# `docker compose up -d` reports `Started` and returns 0 for a container that
+# has already exited 3. `restart: "no"` below is what keeps a misconfigured
+# container dead and inspectable rather than looping.
+
+services:
+  agent-service:
+    build:
+      # The context is `impl/`, not this directory: the image copies
+      # `common/agent-spec/` as well, and a sibling outside the context cannot
+      # be COPYed. Same shape as the other two builds.
+      context: ..
+      dockerfile: gemini-python/Dockerfile
+      args:
+        # Pinned here as well as in the Dockerfile so an upgrade is one edit in
+        # a file an operator reads, not a rebuild with a surprise inside it.
+        GEMINI_CLI_VERSION: "0.54.4"
+
+    # An init at PID 1. The agent's tools background grandchildren, and without
+    # one they reparent to PID 1 and stay there as zombies -- measured on the
+    # Claude build, 3 orphans becoming 3 permanent zombies.
+    init: true
+
+    ports:
+      # **127.0.0.1 and never "8000:8000".** There is no authentication on this
+      # API by default, so anyone who can open a TCP connection can create a
+      # session. The bare form publishes on every host interface and hands that
+      # to the network. Put an authenticating proxy in front if you need it
+      # reachable; do not widen this line.
+      - "127.0.0.1:8000:8000"
+
+    environment:
+      # The credential. **`:-` and not `:?`**: an absent key must reach the BOOT
+      # GATE, which refuses with a message naming what to set and the one route
+      # it cannot see (GP-07). Compose's own interpolation error would say only
+      # that a variable is unset, and the free conformance tier deliberately
+      # runs with no credential at all.
+      GEMINI_API_KEY: "${GEMINI_API_KEY:-}"
+      # Either of these selects a cloud provider instead; both satisfy the gate
+      # and neither authenticates by itself.
+      GOOGLE_GENAI_USE_VERTEXAI: "${GOOGLE_GENAI_USE_VERTEXAI:-}"
+      GOOGLE_GENAI_USE_GCA: "${GOOGLE_GENAI_USE_GCA:-}"
+
+      AGENT_SERVICE_WORKSPACE_DIR: /workspace
+      AGENT_SERVICE_AGENT_HOME_ROOT: /var/lib/agent-service/homes
+      AGENT_SERVICE_TRANSCRIPT_STORE: /var/lib/agent-service/transcripts
+      # **Both gates are PASSED THROUGH, not hardcoded**, and defaulted on. A
+      # hardcoded `true` cannot be turned off by an env file, which is how the
+      # free conformance tier -- which runs with no credential at all, on
+      # purpose -- got a container that exited 3 before any test ran.
+      AGENT_SERVICE_REQUIRE_CREDENTIALS: "${AGENT_SERVICE_REQUIRE_CREDENTIALS:-true}"
+      AGENT_SERVICE_REQUIRE_MOUNTS: "${AGENT_SERVICE_REQUIRE_MOUNTS:-true}"
+      AGENT_SERVICE_MAX_SESSIONS: "${AGENT_SERVICE_MAX_SESSIONS:-8}"
+      # **A stdio MCP server is a SUBPROCESS this service starts with the
+      # session**, before any prompt, and it appears in no turn's events. An
+      # operator who needs every process start attributable to a turn sets this
+      # false; it is published as `capabilities.allow_mcp_servers` either way.
+      # Turning it off does NOT relax the workspace guard -- a session still
+      # runs with an allow list naming no servers.
+      AGENT_SERVICE_ALLOW_MCP_SERVERS: "${AGENT_SERVICE_ALLOW_MCP_SERVERS:-true}"
+      # **Unset means `auto`, and `auto` BILLS TWO MODELS PER TURN** (GP-16): it
+      # is a routing policy, not a model, and the usage block of a single turn
+      # names two. Left empty by default because choosing a model for an operator
+      # is worse than charging them for the one the agent picked -- but an
+      # operator who has not thought about it is paying twice, so the line is
+      # here to be seen rather than discovered on a bill.
+      AGENT_SERVICE_MODEL: "${AGENT_SERVICE_MODEL:-}"
+      # **The wall clock is load-bearing on this target** (GP-18, GP-02): turns
+      # can fail to terminate and no cancel verb exists on either interface, so
+      # the only way a turn ends is that this timeout kills it.
+      AGENT_SERVICE_TURN_TIMEOUT_S: "${AGENT_SERVICE_TURN_TIMEOUT_S:-600}"
+      AGENT_SERVICE_LOG_LEVEL: "${AGENT_SERVICE_LOG_LEVEL:-INFO}"
+      # **Set this and `/v1` requires `Authorization: Bearer <token>`.** Empty
+      # means the port is the only thing between a caller and a service whose
+      # documented capability is running tools -- supported for a single-operator
+      # loopback deployment and nothing else.
+      #
+      # **Per instance, never per fleet.** The service pops it out of its
+      # environment so the agent does not INHERIT it, which is not the same as
+      # the agent being unable to read it: the agent runs as the same uid and
+      # `/proc/<pid>/environ` still carries the value (GP-51).
+      AGENT_SERVICE_AUTH_TOKEN: "${AGENT_SERVICE_AUTH_TOKEN:-}"
+      # **Optional, and empty is a supported configuration** (GP-36). Without it
+      # the history routes refuse with a named type and `/healthz` reports
+      # `database_usable: null`. Set it together with `--profile persistence`
+      # below; the two are separate on purpose, because a deployment may point
+      # at a database it does not run.
+      #
+      # **What it buys here is HISTORY, never continuity.** This agent resumes
+      # from a `--session-file` on the `transcripts` volume, so the database is
+      # a record and never a source -- unlike the Claude build, which can resume
+      # a conversation out of Postgres.
+      AGENT_SERVICE_DATABASE_URL: "${AGENT_SERVICE_DATABASE_URL:-}"
+      AGENT_ID: "${AGENT_ID:-}"
+
+    volumes:
+      # READ-WRITE, and required. Without it the service exits 3 rather than
+      # writing into the container's own layer and discarding it on stop.
+      - ${WORKSPACE_HOST_PATH:?set WORKSPACE_HOST_PATH in .env}:/workspace
+      # **The transcripts are the resume mechanism** (GP-10, GP-11): the agent
+      # destroys its own on first resume, so this service keeps the copy that
+      # `options.resume` reads. On a named volume so a conversation survives a
+      # container restart -- without it, resume works only within one container's
+      # life, which is a supported configuration and not the default one.
+      - transcripts:/var/lib/agent-service/transcripts
+      # One directory per session, holding that session's generated policy and
+      # the agent's own HOME (GP-39). Not persisted on purpose: it is scratch,
+      # and a stale policy outliving its session would be confusing rather than
+      # useful.
+      - homes:/var/lib/agent-service/homes
+
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    # **No `seccomp=unconfined` here, unlike the Codex build.** That build needs
+    # it because bubblewrap must create a user namespace; this agent's own
+    # sandbox does not run at all inside a container (GP-31, exit 44) and is not
+    # used. The boundary here is the generated tool policy plus this container.
+
+    # ~110 MiB and ~17 pids per session is the Claude build's measured figure
+    # and is the closest available; THIS build has not been measured under load,
+    # so these are a ceiling rather than a fit. Expect pids to bind before
+    # memory: the Codex build measured ~30 processes per session and reached its
+    # pid limit at 16 sessions while using a fifth of its memory. Measure this
+    # build before trusting either number.
+    mem_limit: 2048m
+    pids_limit: 512
+
+    # A turn is killed at AGENT_SERVICE_TURN_TIMEOUT_S; this must exceed it so a
+    # stop does not SIGKILL through an in-flight kill and leave a subprocess.
+    stop_grace_period: 30s
+
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+    # **Dead and inspectable beats looping.** Every boot refusal is a
+    # configuration error, and a restart policy would hide it behind a crash
+    # loop that never resolves itself.
+    restart: "no"
+
+  # --- persistence -----------------------------------------------------------
+  # OPTIONAL, and under a profile so the default `up` is unchanged. Bring it up
+  # only when you want history, and set AGENT_SERVICE_DATABASE_URL to match:
+  #
+  #   docker compose --profile persistence up -d --build --wait
+  #
+  # with, in .env:
+  #   POSTGRES_PASSWORD=...
+  #   AGENT_SERVICE_DATABASE_URL=postgresql+asyncpg://postgres:...@postgres:5432/agent
+  postgres:
+    profiles: ["persistence"]
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: agent
+      POSTGRES_USER: postgres
+      # **`:-` and NOT `:?`.** A required-variable check here fails
+      # `docker compose config`, `ps` and `logs` for EVERYONE, including anyone
+      # who never asked for persistence -- compose interpolates every service in
+      # the file whatever profiles are active. Left empty, the postgres image
+      # itself refuses to initialise with a clear message, and only when it is
+      # actually started.
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-}"
+    volumes:
+      - agent-db:/var/lib/postgresql/data
+      # Shared with the other builds: the same roles, so a database created by
+      # one is readable by another. Runs ONCE, on an empty data directory.
+      - ../common/db/init:/docker-entrypoint-initdb.d:ro
+
+    # NOT published to the host. The service reaches it over the compose
+    # network and nothing outside needs to.
+
+    healthcheck:
+      # `-U postgres -d agent` explicitly: bare `pg_isready` checks the default
+      # database and reports ready before ours exists on first boot.
+      test: ["CMD-SHELL", "pg_isready -U postgres -d agent"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+    # Same reasoning as the service: a permanent configuration error should stay
+    # visible rather than crash-loop.
+    restart: "no"
+
+volumes:
+  transcripts:
+  homes:
+  agent-db:
