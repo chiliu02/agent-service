@@ -1,0 +1,14 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/chiliu02/agent-service/security/advisories/new
+    about: >
+      Report privately, never as an issue. See SECURITY.md for what is and is
+      not in scope — this service exists to give a coding agent a shell, so
+      several alarming-looking behaviours are the product working as designed.
+  - name: Question about the specification
+    url: https://github.com/chiliu02/agent-service/discussions
+    about: >
+      How the contract is meant to behave, or why three builds differ. Read
+      docs/capability-divergence.md first — the deliberate differences are
+      recorded there.

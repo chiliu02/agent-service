@@ -1,0 +1,23 @@
+# THIS TARGET'S. The platform root has its own for the things every
+# implementation would share (`__pycache__/`, `.venv`, `.env`); everything here
+# is anchored to a directory only this target has, which is exactly what cannot
+# be written at the root -- a pattern containing a slash is relative to the
+# .gitignore it appears in.
+
+# The agent under test. `probe_gemini_cli.py` and the three live probes all take
+# a node_modules path and default to this one:
+#
+#     npm install --no-save @google/gemini-cli@0.54.4
+#
+# Not committed: it is ~5 packages of someone else's bundle, it is pinned in the
+# probes' own PINNED constant, and the probes print the version they actually
+# measured so a mismatch is visible rather than assumed.
+node_modules/
+package-lock.json
+
+# Scratch space -- every probe workspace goes under here. Same "temp/*" +
+# negation form the other implementations use: git never descends into a
+# directory excluded by the bare directory form, so "!temp/.gitkeep" would
+# silently never fire.
+temp/*
+!temp/.gitkeep
