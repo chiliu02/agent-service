@@ -1,0 +1,21 @@
+# THIS TARGET'S. The platform root has its own for the things every
+# implementation would share (`__pycache__/`, `.venv`, `.env`); everything here
+# is anchored to a directory only this target has.
+
+# The agent under test, installed for `spike/probe_pi_cli.py`:
+#
+#     npm install --no-save @earendil-works/pi-coding-agent@0.85.1
+#
+# Not committed: 165 packages of someone else's bundle, pinned in the probe's own
+# PINNED constant and in the Dockerfile, and the probe prints the version it
+# actually measured so a mismatch is visible rather than assumed.
+spike/node_modules/
+spike/package-lock.json
+spike/package.json
+
+# Scratch space -- every probe workspace goes under here. Same "temp/*" +
+# negation form the other implementations use: git never descends into a
+# directory excluded by the bare directory form, so "!temp/.gitkeep" would
+# silently never fire.
+temp/*
+!temp/.gitkeep
