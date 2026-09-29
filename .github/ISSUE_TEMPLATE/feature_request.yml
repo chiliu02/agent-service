@@ -1,0 +1,61 @@
+name: Feature request
+description: Propose a change to the specification or to a build
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **The specification bends the implementation, never the reverse.** A
+        proposal that would make one build's behaviour normative is the shape
+        that gets declined most often — so say which of the two you are
+        changing.
+
+  - type: dropdown
+    id: surface
+    attributes:
+      label: What are you proposing to change?
+      options:
+        - The HTTP specification (a clause, a field, an endpoint)
+        - One build's behaviour, within the existing specification
+        - The conformance suite
+        - Tooling, docs, or CI
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What can't you do today?
+      description: >
+        Describe the situation, not the solution. What did you try, and what
+        did the service answer?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What should happen instead
+    validations:
+      required: true
+
+  - type: textarea
+    id: three-builds
+    attributes:
+      label: How would each of the three builds satisfy it?
+      description: >
+        This is the question that decides most proposals. The targets are
+        different products — different tool loops, session lifecycles and
+        sandbox models, and one ships no SDK at all. A clause only one build
+        can satisfy is a capability flag, not a clause. If a build genuinely
+        cannot, say so — `unsupported_options` and `/v1/capabilities` exist for
+        exactly that.
+    validations:
+      required: true
+
+  - type: textarea
+    id: breaking
+    attributes:
+      label: Does it break an existing consumer?
+      description: >
+        Widenings are cheap; re-typing a published leaf is not. Say which.

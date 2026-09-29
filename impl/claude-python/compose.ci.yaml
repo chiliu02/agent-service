@@ -1,0 +1,41 @@
+# CI-ONLY OVERLAY. Never used alone -- `ci.py` (at the platform root) passes it as
+#
+#     docker compose -f compose.yaml -f compose.ci.yaml -p agentsvc-ci ...
+#
+# and nothing else in the repository references it. `compose.yaml` is unchanged
+# by design: it is the file the security comments describe and the file
+# `tests/test_config.py` reads, so the CI stack differs from the real one by
+# exactly what is in this overlay and nothing else.
+#
+# Two published ports, and both exist because the CI stack has to be able to run
+# BESIDE a stack the operator already has up. Neither weakens the boundary:
+# both keep the `127.0.0.1:` prefix that compose.yaml calls its most important
+# line, so neither answers on any other interface.
+
+services:
+  agent-service:
+    # `!override`, not a plain list. Compose CONCATENATES sequence fields when it
+    # merges files, so without the tag this would ADD a second publish and leave
+    # 8000 bound as well -- which is the collision the overlay exists to avoid.
+    # Requires Compose v2.24+ for the tag; measured against v5.3.1.
+    ports: !override
+      - "127.0.0.1:${CI_HOST_PORT:-8100}:8000"
+
+  postgres:
+    # DELIBERATELY CONTRADICTS compose.yaml, which publishes no host port for
+    # Postgres and says why ("a database that is only reachable by the one
+    # process that needs it is one fewer thing to secure"). That reasoning is
+    # about a DEPLOYMENT and still stands there.
+    #
+    # It cannot stand here, because of a fact recorded in CP-084: the
+    # service does NOT run migrations -- `grep alembic src/` returns nothing and
+    # the image copies no `alembic.ini` and no `migrations/`, so a deployment
+    # applies them out of band. Out of band, for a host running `uv run alembic`,
+    # means reachable from the host. The alternative is a one-off container
+    # carrying the migration tree, which is more machinery for a stack that is
+    # destroyed minutes later on loopback with a throwaway password.
+    #
+    # No `!override` needed: compose.yaml gives this service no `ports` at all,
+    # so there is nothing to concatenate with.
+    ports:
+      - "127.0.0.1:${CI_PG_PORT:-15432}:5432"
