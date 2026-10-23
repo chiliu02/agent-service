@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<module external.system.id="pyproject.toml" type="PYTHON_MODULE" version="4">
+  <component name="NewModuleRootManager">
+    <content url="file://$MODULE_DIR$/impl/codex-python">
+      <sourceFolder url="file://$MODULE_DIR$/impl/codex-python/src" isTestSource="false" />
+      <excludeFolder url="file://$MODULE_DIR$/impl/codex-python/.venv" />
+    </content>
+    <orderEntry type="sourceFolder" forTests="false" />
+    <orderEntry type="module" module-name="agent-spec" exported="" />
+    <orderEntry type="jdk" jdkName="~\Workspace\wrk\intellij\python\agent-service\impl\codex-python\.venv" jdkType="Python SDK" />
+  </component>
+</module>
