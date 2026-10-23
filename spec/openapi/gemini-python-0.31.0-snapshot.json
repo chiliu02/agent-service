@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "agent-service",
-    "summary": "HTTP access to Gemini CLI headless (pi-python).",
-    "version": "0.30.0"
+    "summary": "HTTP access to Gemini CLI headless (gemini-python).",
+    "version": "0.31.0-snapshot"
   },
   "paths": {
     "/healthz": {
@@ -47,14 +47,14 @@
                 "example": {
                   "service": {
                     "spec": {
-                      "document_version": "0.30.0"
+                      "document_version": "0.31.0-snapshot"
                     },
                     "impl": {
-                      "name": "pi-python",
+                      "name": "gemini-python",
                       "version": "x.y.z"
                     },
                     "sdk": {
-                      "name": "pi-coding-agent",
+                      "name": "gemini-cli",
                       "version": "x.y.z"
                     },
                     "sdk_version": "x.y.z"
@@ -62,40 +62,55 @@
                   "config": {
                     "workspace_dir": "/workspace",
                     "reference_dirs": [],
-                    "default_model": "unset",
+                    "default_model": "auto",
                     "max_sessions": 8,
                     "require_credentials": true,
                     "require_mounts": false,
                     "auth_required": false,
-                    "allow_mcp_servers": false,
+                    "allow_mcp_servers": true,
                     "credential_sources": [
-                      "ANTHROPIC_API_KEY",
-                      "OPENAI_API_KEY",
                       "GEMINI_API_KEY"
                     ],
-                    "provider_selectors": []
+                    "provider_selectors": [
+                      "GOOGLE_GENAI_USE_VERTEXAI",
+                      "GOOGLE_GENAI_USE_GCA"
+                    ]
                   },
                   "accepts": {
                     "permission_modes": [
                       {
                         "id": "default",
                         "name": "Default",
-                        "description": "The agent's only mode. Pi has no per-operation approval in headless use: its trust gate is binary and project-level, and non-interactive runs skip it entirely. What confines a turn here is the tool allowlist and the container -- nothing else."
+                        "description": "Prompts for approval, which in headless means the agent decides for itself. NOT a boundary: across nine trials of one prompt it wrote once, declined three times and failed to terminate five times. The generated tool policy is what actually confines a turn."
+                      },
+                      {
+                        "id": "auto_edit",
+                        "name": "Auto edit",
+                        "description": "Auto-approves edit tools. Deterministic, unlike `default`."
+                      },
+                      {
+                        "id": "yolo",
+                        "name": "YOLO",
+                        "description": "Auto-approves every tool. **Also switches OFF the agent's built-in shell redirection guard**, so this build always denies redirection with an explicit policy rule instead."
+                      },
+                      {
+                        "id": "plan",
+                        "name": "Plan",
+                        "description": "Read-only mode, as the agent defines it. Unmeasured here."
                       }
                     ],
                     "default_permission_mode": "default",
                     "effort_levels": [],
                     "setting_sources": [],
                     "default_allowed_tools": [
-                      "read",
-                      "write",
-                      "edit",
-                      "ls",
-                      "grep",
-                      "find"
+                      "read_file",
+                      "write_file",
+                      "list_directory",
+                      "glob",
+                      "grep_search"
                     ],
                     "always_disallowed_tools": [
-                      "ask_question"
+                      "run_shell_command"
                     ],
                     "unsupported_options": [
                       {
@@ -131,17 +146,23 @@
                           "object"
                         ],
                         "values": null
+                      },
+                      {
+                        "field": "setting_paths",
+                        "types": null,
+                        "values": null
                       }
                     ],
                     "strict_mcp_config": true,
-                    "allow_supplied_sdk_session_id": true,
+                    "allow_supplied_sdk_session_id": false,
                     "mcp": {
                       "transports": [
                         "stdio",
+                        "sse",
                         "http"
                       ],
                       "http_headers": "any",
-                      "server_name_pattern": "^[A-Za-z0-9][A-Za-z0-9-]*$"
+                      "server_name_pattern": "^[^_]+$"
                     },
                     "limits": {}
                   },
@@ -152,9 +173,9 @@
                       "session_idle_ttl_s": 1800.0
                     },
                     "mcp_tool_call": {
-                      "request_timeout_s": null,
+                      "request_timeout_s": 60,
                       "idle_timeout_s": null,
-                      "total_timeout_s": 60,
+                      "total_timeout_s": 600,
                       "progress_resets_idle": false
                     },
                     "sandbox": {
@@ -163,14 +184,14 @@
                     },
                     "permission_enforcement": "none",
                     "model_usage_scope": "per_turn",
-                    "reports_cost_usd": true,
+                    "reports_cost_usd": false,
                     "usage_counts_tool_calls": false,
-                    "turn_token_overhead": 550.0,
+                    "turn_token_overhead": 7000.0,
                     "llm_correlation": {
                       "header": null,
-                      "measured": false
+                      "measured": true
                     },
-                    "sdk_session_id_scope": "conversation",
+                    "sdk_session_id_scope": "turn",
                     "resume_durability": "store_volume",
                     "query_reports_sdk_session_id": true,
                     "query_consumes_a_session_slot": false
@@ -209,7 +230,7 @@
           "sessions"
         ],
         "summary": "List Sessions",
-        "description": "**Answered from our own store, never from the agent** (`PI-09`).\n\n`--list-sessions` hides sessions that are still resumable and lists ones\nabout to be deleted, so it cannot answer this route truthfully.",
+        "description": "**Answered from our own store, never from the agent** (GP-14).\n\n`--list-sessions` hides sessions that are still resumable and lists ones\nabout to be deleted, so it cannot answer this route truthfully.",
         "operationId": "list_sessions_v1_sessions_get",
         "responses": {
           "200": {
@@ -229,7 +250,7 @@
           "sessions"
         ],
         "summary": "Create Session",
-        "description": "Open a session. **A supplied `sdk_session_id` is HONOURED** (`PI-14`).\n\n`--session-id` is echoed back verbatim in the opening event, so a caller\nmay name the conversation rather than reading back an id this service\nminted. Two of the other three builds refuse this; publishing\n`allow_supplied_sdk_session_id: true` is what lets a client tell.",
+        "description": "Open a session. **A supplied `sdk_session_id` is refused** (GP-34).\n\nNeither the CLI's `--session-id` nor anything else survives the durable\nresume path, so adopting a caller's id and then returning a different one\nwould break the single guarantee supplying it provides, invisibly.",
         "operationId": "create_session_v1_sessions_post",
         "requestBody": {
           "content": {
@@ -321,7 +342,6 @@
           "sessions"
         ],
         "summary": "Get Session",
-        "description": "**`context_usage` is how full the window is after the latest turn**\n(`PI-65`), read from the agent in a short process that makes no model\ncall. This route waits for a read still in flight; `GET /v1/sessions`\ndoes not, and shows the figure from before it.",
         "operationId": "get_session_v1_sessions__sid__get",
         "parameters": [
           {
@@ -426,7 +446,7 @@
           "sessions"
         ],
         "summary": "Update Session",
-        "description": "Change the model or the permission mode mid-session.\n\n**Omitted fields are never forwarded.** Both are passed to the agent per\nturn \u2014 `-m` and `--approval-mode` \u2014 so writing a null would mean sending\nthe flag with nothing behind it, which is not the same as leaving it\nalone.\n\n**The read-back is what a caller gets**, so it can see what was actually\ntaken rather than what it asked for.",
+        "description": "Change the model or the permission mode mid-session.\n\n**Omitted fields are never forwarded.** Both are passed to the agent per\nturn — `-m` and `--approval-mode` — so writing a null would mean sending\nthe flag with nothing behind it, which is not the same as leaving it\nalone.\n\n**The read-back is what a caller gets**, so it can see what was actually\ntaken rather than what it asked for.",
         "operationId": "update_session_v1_sessions__sid__patch",
         "parameters": [
           {
@@ -489,7 +509,7 @@
           "sessions"
         ],
         "summary": "Send Turn",
-        "description": "One turn, run to completion.\n\n**A 409 and never a queue** if a turn is already running: the two callers\nwould otherwise receive each other's turns. **A 504 and never a 200 with\na flag** if the wall clock runs out \u2014 the timeout is enforced by killing\nthe process, which is the only way to end a turn on this interface\n(`PI-11`) -- the RPC one has a real `abort`.",
+        "description": "One turn, run to completion.\n\n**A 409 and never a queue** if a turn is already running: the two callers\nwould otherwise receive each other's turns. **A 504 and never a 200 with\na flag** if the wall clock runs out — the timeout is enforced by killing\nthe process, which is the only way to end a turn on this agent (GP-02).",
         "operationId": "send_turn_v1_sessions__sid__messages_post",
         "parameters": [
           {
@@ -691,7 +711,7 @@
           "sessions"
         ],
         "summary": "Interrupt Session",
-        "description": "Stop a running turn. **Always 200 with a body**, never 204 or 409.\n\nA turn can finish between a client deciding to stop it and the request\narriving, and that race is unavoidable, so \"there was nothing to stop\"\nis reported in the body rather than as an error.\n\n**Interrupt here is a kill.** Neither interface registers a cancel verb\n(`PI-11`), so this is abrupt: expect no final event beyond what already\nreached you.",
+        "description": "Stop a running turn. **Always 200 with a body**, never 204 or 409.\n\nA turn can finish between a client deciding to stop it and the request\narriving, and that race is unavoidable, so \"there was nothing to stop\"\nis reported in the body rather than as an error.\n\n**Interrupt here is a kill.** Neither interface registers a cancel verb\n(GP-02), so this is abrupt: expect no final event beyond what already\nreached you.",
         "operationId": "interrupt_session_v1_sessions__sid__interrupt_post",
         "parameters": [
           {
@@ -764,7 +784,7 @@
           "query"
         ],
         "summary": "Run Query",
-        "description": "Run one turn to completion with no session.\n\n**Consumes no session slot**, which is published rather than assumed:\n`capabilities.query_consumes_a_session_slot` is `false`. It gets its own\nHOME and its own policy all the same \u2014 a one-shot turn is not a turn with\na smaller boundary.",
+        "description": "Run one turn to completion with no session.\n\n**Consumes no session slot**, which is published rather than assumed:\n`capabilities.query_consumes_a_session_slot` is `false`. It gets its own\nHOME and its own policy all the same — a one-shot turn is not a turn with\na smaller boundary.",
         "operationId": "run_query_v1_query_post",
         "requestBody": {
           "content": {
@@ -864,7 +884,7 @@
           "query"
         ],
         "summary": "Run Query Stream",
-        "description": "The same, as Server-Sent Events.\n\n**This route commits EARLY, and that is the whole difference from\n`/v1/sessions/{id}/messages/stream`.** The 200 is written before the\nfirst message exists, so **every** failure \u2014 including one that produces\nno events at all \u2014 arrives in-band as `event: error` rather than as a\nstatus code. A client that only checks the status here will read a\nfailed turn as a successful one.\n\nIt cannot be otherwise: there is no session to 404 on and no lock to 409\non, so there is nothing to learn before committing that would be worth\nwaiting for.",
+        "description": "The same, as Server-Sent Events.\n\n**This route commits EARLY, and that is the whole difference from\n`/v1/sessions/{id}/messages/stream`.** The 200 is written before the\nfirst message exists, so **every** failure — including one that produces\nno events at all — arrives in-band as `event: error` rather than as a\nstatus code. A client that only checks the status here will read a\nfailed turn as a successful one.\n\nIt cannot be otherwise: there is no session to 404 on and no lock to 409\non, so there is nothing to learn before committing that would be worth\nwaiting for.",
         "operationId": "run_query_stream_v1_query_stream_post",
         "requestBody": {
           "content": {
@@ -906,7 +926,7 @@
           "history"
         ],
         "summary": "Get Transcript",
-        "description": "A session's recorded events, oldest first.\n\n**Reads STORED rows and asks the agent nothing.** Every turn is its own\nprocess here (`PI-11`), so once a turn has ended there is nothing left to\nask \u2014 this route is the only way to see what happened after the fact,\nand without a database there is no way at all.",
+        "description": "A session's recorded events, oldest first.\n\n**Reads STORED rows and asks the agent nothing.** Every turn is its own\nprocess here (GP-41), so once a turn has ended there is nothing left to\nask — this route is the only way to see what happened after the fact,\nand without a database there is no way at all.",
         "operationId": "get_transcript_v1_sessions__sid__transcript_get",
         "parameters": [
           {
@@ -987,7 +1007,7 @@
           "history"
         ],
         "summary": "Get Run",
-        "description": "One recorded turn, by the id this service minted for it.\n\n**`run_id` is neither of the session ids.** It identifies a single turn,\nit is returned by nothing on the live path today, and it is discoverable\nfrom a transcript row \u2014 which is why an unknown one is a plain 404.",
+        "description": "One recorded turn, by the id this service minted for it.\n\n**`run_id` is neither of the session ids.** It identifies a single turn,\nit is returned by nothing on the live path today, and it is discoverable\nfrom a transcript row — which is why an unknown one is a plain 404.",
         "operationId": "get_run_v1_runs__run_id__get",
         "parameters": [
           {
@@ -1500,7 +1520,7 @@
           "auth_required": {
             "type": "boolean",
             "title": "Auth Required",
-            "description": "Whether `/v1` requires `Authorization: Bearer <token>`. **This route never does**, so it is always answerable \u2014 the container healthcheck reads it, and an authenticated service whose healthcheck could not run would be permanently unhealthy.\n\n`false` means the deployment serves `/v1` to anyone who can reach the port, on a service whose documented capability is arbitrary shell execution. That is a supported configuration for a single-operator loopback deployment and nothing else. Put network isolation and a relay in front of it before a token."
+            "description": "Whether `/v1` requires `Authorization: Bearer <token>`. **This route never does**, so it is always answerable — the container healthcheck reads it, and an authenticated service whose healthcheck could not run would be permanently unhealthy.\n\n`false` means the deployment serves `/v1` to anyone who can reach the port, on a service whose documented capability is arbitrary shell execution. That is a supported configuration for a single-operator loopback deployment and nothing else. Put network isolation and a relay in front of it before a token."
           },
           "database_configured": {
             "type": "boolean",
@@ -2245,7 +2265,7 @@
           "outcome_recorded": {
             "type": "boolean",
             "title": "Outcome Recorded",
-            "description": "False when the run ended without the agent's own terminating result (the agent process crashed, exited early, or was killed). The events list may still be populated, but result, cost and usage are unavailable \u2014 this is not the same as a successful run that produced no output.",
+            "description": "False when the run ended without the agent's own terminating result (the agent process crashed, exited early, or was killed). The events list may still be populated, but result, cost and usage are unavailable — this is not the same as a successful run that produced no output.",
             "default": true
           },
           "result": {
@@ -3697,7 +3717,7 @@
             "type": "string",
             "minLength": 1,
             "description": "The OpenAPI document this image serves -- this document. A `-snapshot` suffix means it can change under you.",
-            "const": "0.30.0"
+            "const": "0.31.0-snapshot"
           },
           "schema_revision": {
             "type": "string",
@@ -3717,7 +3737,7 @@
                 "type": "string",
                 "minLength": 1,
                 "description": "The build. Same value as `deployment.service.impl.name`, and what a per-implementation table keys on.",
-                "const": "pi-python"
+                "const": "gemini-python"
               },
               "version": {
                 "type": [
@@ -3739,8 +3759,6 @@
             "minItems": 1,
             "description": "Environment variables carrying a model credential for this build. Validate the variable you inject against this list before starting a container. Never empty: a build no credential could satisfy could not take a turn.",
             "const": [
-              "ANTHROPIC_API_KEY",
-              "OPENAI_API_KEY",
               "GEMINI_API_KEY"
             ]
           },
@@ -3748,7 +3766,7 @@
             "type": "string",
             "minLength": 1,
             "description": "The target family this build drives, reached through this build's own `credential_sources` and `endpoint_source`. A consumer relaying to a vendor carries one mapping: `claude` is the Anthropic API, `codex` the OpenAI API, `gemini` the Gemini API. **Not a restatement of `impl.name`**, which carries the implementation language -- a second build driving the same target in another language publishes the same `model_api` and a different `impl.name`.",
-            "const": "pi"
+            "const": "gemini"
           },
           "provider_selectors": {
             "type": "array",
@@ -3757,7 +3775,10 @@
               "minLength": 1
             },
             "description": "Environment variables that move this build onto a cloud provider -- Bedrock, Vertex, Foundry, GCA. **Never treat one as a credential.** An operator engaging one has changed something `model_api` does not claim to cover. Empty is a truthful answer for a build whose agent has no such switches.",
-            "const": []
+            "const": [
+              "GOOGLE_GENAI_USE_VERTEXAI",
+              "GOOGLE_GENAI_USE_GCA"
+            ]
           },
           "auth_enforced": {
             "type": "boolean",
@@ -3768,7 +3789,7 @@
             "type": "string",
             "minLength": 1,
             "description": "The one environment variable that redirects this image's model traffic. **Singular, not a list**, because a consumer choosing from a list is a consumer guessing. Names a VARIABLE, never a URL, and is not derivable from `credential_sources`.",
-            "const": "HTTPS_PROXY"
+            "const": "GOOGLE_GEMINI_BASE_URL"
           },
           "gateway_map_source": {
             "type": [
@@ -3786,8 +3807,7 @@
               "variable": {
                 "type": "string",
                 "minLength": 1,
-                "description": "The environment variable the map is delivered under. Its value is a JSON object keyed by provider name, each entry `{\"base_url\": \"https://...\", \"headers\": {\"name\": \"value\"}}` -- `headers` optional, and delivered on every request to that provider. **A malformed value is a boot refusal, never an empty map**: an operator who sets this expects every turn behind their gateway, and falling back to unfronted would send the container's own credential to the vendor.",
-                "const": "AGENT_SERVICE_PROVIDER_GATEWAYS"
+                "description": "The environment variable the map is delivered under. Its value is a JSON object keyed by provider name, each entry `{\"base_url\": \"https://...\", \"headers\": {\"name\": \"value\"}}` -- `headers` optional, and delivered on every request to that provider. **A malformed value is a boot refusal, never an empty map**: an operator who sets this expects every turn behind their gateway, and falling back to unfronted would send the container's own credential to the vendor."
               },
               "provider_ids": {
                 "type": "array",
@@ -3796,25 +3816,18 @@
                   "minLength": 1
                 },
                 "minItems": 1,
-                "description": "**The keys to write, and they are the AGENT's ids rather than this platform's words.** A key here is the provider segment of `RunOptions.model` -- what precedes the `/` -- and the service compares the two directly, so a map keyed on anything else refuses every turn it was built to front. Listed because the two vocabularies do not line up and only one side can see the agent: `model_api` is the family this build drives and is not a key. **This is the set reachable with the published `credential_sources`, not the agent's whole catalogue**, which is larger and grows with the bundled agent. Moving this list costs a document version like every other value here.",
-                "const": [
-                  "anthropic",
-                  "google",
-                  "openai"
-                ]
+                "description": "**The keys to write, and they are the AGENT's ids rather than this platform's words.** A key here is the provider segment of `RunOptions.model` -- what precedes the `/` -- and the service compares the two directly, so a map keyed on anything else refuses every turn it was built to front. Listed because the two vocabularies do not line up and only one side can see the agent: `model_api` is the family this build drives and is not a key. **This is the set reachable with the published `credential_sources`, not the agent's whole catalogue**, which is larger and grows with the bundled agent. Moving this list costs a document version like every other value here."
               },
               "agent_appends_api_suffix": {
                 "type": "boolean",
-                "description": "Whether the AGENT adds its own API path to `base_url`. `true` means the base URL must carry none: a URL ending `/v1` produced `/v1/v1/messages` when this was measured, and the gateway saw a path it does not serve.",
-                "const": true
+                "description": "Whether the AGENT adds its own API path to `base_url`. `true` means the base URL must carry none: a URL ending `/v1` produced `/v1/v1/messages` when this was measured, and the gateway saw a path it does not serve."
               },
               "unconfigured_provider": {
                 "enum": [
                   "refused",
                   "direct"
                 ],
-                "description": "What a request naming a provider with NO entry does. `refused` is a 400 naming the provider; `direct` means it leaves the container for its vendor with no gateway in front of it, carrying the container's own credential. **Enumerated because the set really is closed** -- a request either leaves or it does not.",
-                "const": "refused"
+                "description": "What a request naming a provider with NO entry does. `refused` is a 400 naming the provider; `direct` means it leaves the container for its vendor with no gateway in front of it, carrying the container's own credential. **Enumerated because the set really is closed** -- a request either leaves or it does not."
               }
             },
             "description": "How a gateway is put in front of this build's model traffic, for a consumer that holds the account credential and counts every relayed call. **Distinct from `endpoint_source`, and needed because a proxy cannot be a gateway**: behind `CONNECT` an intermediary sees a host name and then ciphertext, so it can neither swap a credential nor read a response to count it. This names a map instead -- a base URL per provider, reached over plain HTTP, so the request arriving says which vendor it is for. `null` is a real answer and means this build has one base-URL variable already, so a map would have nothing to key on; it differs from the field being absent, which means nobody looked."
@@ -3878,7 +3891,7 @@
                 "type": "string",
                 "minLength": 1,
                 "description": "Where the home is when the variable is unset -- the in-container path, so a mount can be decided before anything is started. **Not a promise that it survives**: whether the shipped compose puts a volume on it is a deployment fact, and a consumer that needs the directory to outlive a container mounts it rather than assuming.",
-                "const": "/var/lib/agent-service/agent-dirs"
+                "const": "/var/lib/agent-service/homes"
               },
               "scope": {
                 "enum": [
@@ -3912,7 +3925,7 @@
                     ],
                     "minLength": 1,
                     "description": "The environment variable moving the conversation store, when `in_home` is false.",
-                    "const": "AGENT_SERVICE_SESSION_STORE"
+                    "const": "AGENT_SERVICE_TRANSCRIPT_STORE"
                   },
                   "default_path": {
                     "type": [
@@ -3921,7 +3934,7 @@
                     ],
                     "minLength": 1,
                     "description": "Where that store is when its variable is unset.",
-                    "const": "/var/lib/agent-service/sessions"
+                    "const": "/var/lib/agent-service/transcripts"
                   }
                 }
               },
@@ -3935,7 +3948,24 @@
                   "kept": {
                     "type": "boolean",
                     "description": "Whether the bundled agent, as this build ships it, keeps a memory that a later session reads. `false` is a published answer -- measured, and there is none -- and every other field is then absent.",
+                    "const": true
+                  },
+                  "in_home": {
+                    "type": "boolean",
+                    "description": "Whether the memory lives under the home. When `false` it has a variable and a default of their own, published here, and moving the home does not move it.",
                     "const": false
+                  },
+                  "variable": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "The environment variable moving the memory store, when `in_home` is false.",
+                    "const": "AGENT_SERVICE_MEMORY_STORE"
+                  },
+                  "default_path": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Where that store is when its variable is unset.",
+                    "const": "/var/lib/agent-service/memory"
                   }
                 },
                 "description": "Where the bundled agent keeps what it remembers ACROSS sessions, so a consumer can mount it to outlive a container. **One memory per service**: every session reads and writes the same place, and two sessions writing one file at once leave the later write. Requested by Agent Harness (2026-10-17)."
@@ -3957,8 +3987,10 @@
                 },
                 "description": "Paths, relative to the home, that this service writes AFTER laying the seed down -- so a seeded file at one of them is overwritten wholesale, never merged. **Empty where `seed_source` is null**, and otherwise the complete list. Published so a consumer composing a seed can refuse a configuration that lands on one, at composition time and by name, rather than discovering it as a preference that silently did not apply. The ordering is deliberate and is not going to change: these files are what confine the agent and what route its model traffic, so a seed that could replace them would let whoever composes it widen a session's tool policy. Requested by Agent Harness (2026-09-15).",
                 "const": [
-                  "models.json",
-                  "mcp.json"
+                  ".gemini/settings.json",
+                  "admin-policy.toml",
+                  "system.md",
+                  "transcript.jsonl"
                 ]
               },
               "read_on_resume": {

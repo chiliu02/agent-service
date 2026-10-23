@@ -120,7 +120,7 @@ ENV AGENT_SERVICE_WORKSPACE_DIR=/workspace \
 # third copy of a value that moves every build is maintenance with no reader.
 LABEL org.opencontainers.image.title="agent-service-gemini-python"
 LABEL com.npf.agent-service.impl="gemini-python"
-LABEL com.npf.agent-service.document-version="0.30.0"
+LABEL com.npf.agent-service.document-version="0.31.0-snapshot"
 LABEL com.npf.agent-service.schema-revision="d3f9a0c15e27"
 
 EXPOSE 8000
