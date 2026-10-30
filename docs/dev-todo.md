@@ -55,7 +55,7 @@ consequence is that priority is now mostly a choice rather than a queue.
 
 ### Open
 
-**Nothing, and item 17 lived for one day.** `0.19.0` was cut on 2026-08-19 and
+**One item, 19: the agent pins for `0.32.0`.** Before it, nothing: item 17 lived for one day. `0.19.0` was cut on 2026-08-19 and
 both sides are green against it; item 15 — the consumer's find on 2026-09-08 —
 was wired the same day, and item 16, which wiring it turned up, was decided the
 same day too. Item 17 was a measurement owed to Agent Harness, and their own
@@ -63,6 +63,7 @@ reply retired half of it before it was taken.
 
 | # | Item | Blocked on |
 |---|---|---|
+| 19 | **Move all four agent pins for `0.32.0`** — Gemini CLI first, because it is owed to Agent Harness in `gemini-resume-resends-tool-results` | nothing; codex needs code first — [below](#19-the-agent-pins-for-0320--planned-2026-10-30) |
 | ~~17~~ | ~~Measure the two `claude-python` claims owed to Agent Harness~~ | **retired 2026-09-15, both halves.** (a) `setting_sources` defaulting to empty needs no measurement any more: Harness replied that it sends `"user"` on every dispatched turn to a build that accepts the field, so the default is not in its path. (b) The resume divergence was settled in `CP-153` and acted on rather than measured on the wire — the override is a single unconditional expression in the pinned SDK (`{**options.env, "CLAUDE_CONFIG_DIR": str(materialized.config_dir)}`), a live turn could only have confirmed it, and it is now published as `agent_home.read_on_resume: "settings_only"` with the `settings.json` half repaired |
 
 ### Closed
@@ -89,6 +90,110 @@ reply retired half of it before it was taken.
 | ~~1~~ | ~~Adopt CI~~ | done 2026-08-06 — [below](#1-adopt-ci--done-2026-08-06) |
 | ~~1b~~ | ~~Two asks from Agent Studio~~ | both shipped 2026-08-07 — [below](#1b-two-asks-from-agent-studio--both-shipped) |
 | ~~2~~ | ~~Authentication (Q6)~~ | shipped 0.11.0 — [below](#2-authentication--q6-shipped-in-0110-optional-off-by-default) |
+
+## 19. The agent pins for `0.32.0` — PLANNED 2026-10-30
+
+**`0.31.0` shipped on the old pins on purpose** (user, 2026-10-30): nothing in it
+needed a newer agent, and the four `0.31.0.dev1` images were what Harness had
+already passed. Each latest version was measured the same day, locally on
+Windows, with the same three-turn probe through the HTTP routes (read a file of
+about 30 000 tokens, then two one-word turns). Turn 2 to turn 3 is the number that
+shows whether a resume resends the file.
+
+| Build | Pinned | Latest | Turn 2 → 3 | `context_usage` | Unit suite on latest |
+|---|---|---|---|---|---|
+| gemini | CLI `0.54.4` | `0.66.0` | **+10** (was +29 768) | `null` by design until wired, step 1 | not version-bound (fake agent) |
+| pi | `0.85.1` | `1.4.0` | +10 | filled; `resume` probe and `get_session_stats` probe pass | not version-bound (fake agent) |
+| claude | SDK `0.2.128` | `0.2.175` (bundles Claude Code `2.1.314`) | +106 | filled | **all pass** |
+| codex | `0.144.4` | `0.163.0` | +18 | filled on a new session | **8 fail** — see step 4 |
+
+**Order: gemini, pi, claude, codex.** Gemini first because it is promised to a
+consumer and turns a field on. Codex last because it is the only one that needs
+code before it can move. **One build per commit**, each with its references
+entry, so a bad pin reverts on its own.
+
+### Step 1 — gemini-python: `0.54.4` → `0.66.0`
+
+- **The fix is in the code, not only in the probe.** `convertSessionToClientHistory`
+  is byte-identical in `0.65.0-preview.0` and `0.65.0`, and differs only in
+  formatting in `0.66.0`. Upstream issue 29365, pull request 29618. **Our
+  2026-10-21 note said no stable release carried it. That was wrong on its own
+  date**: `0.65.0` was published 2026-10-20 21:26 UTC. GP-78 says the same and is
+  corrected in this step.
+- **GP-33's recheck list, in its order, all free**: the ACP method table (GP-02),
+  the handshake catalogues (GP-03), the exit codes (GP-06), the policy schema and
+  its enum spellings (GP-25, GP-29), the trust behaviour (GP-08). Then move
+  `PINNED` in every `spike/` probe and the Dockerfile `ARG`.
+- **Explain turn 1 before shipping.** On `0.66.0` the file-reading turn took
+  **224 462** input tokens and left **8** copies in the transcript. On `0.54.4`
+  it took 44 768 tokens and left 2. Turns 2 and 3 are flat, so this is not a
+  resume defect. The likely cause is `read_file` paging a large file into
+  several calls, but that is a guess until a probe shows it. If it is real, it
+  is a cost a consumer sees, and the release note says so.
+- **Wire `context_usage`.** The publishing condition in
+  `the-context-window-after-resume.1.md` §3 is now met: the last record's
+  `input + output` over `tokenLimit` (1 048 576 for every model but two Gemma
+  ids). Recheck that `tokenLimit` table in the `0.66.0` bundle first.
+- **Consumer-visible**: `capability-divergence.md` (the gemini `context_usage`
+  cell and the header versions), the gemini guide, and the description in its
+  document. Then tell Harness on the open thread, as turn 1 promised.
+
+### Step 2 — pi-python: `0.85.1` → `1.4.0`, a major version
+
+- **Run the free probe first**: `spike/probe_pi_cli.py`, which checks the flag
+  catalogue, the RPC dispatch table, the keyless credential gate and agent-home
+  containment by invoking them.
+- **Pi gained built-in MCP and codemode in `0.99.0`.** This build gets MCP
+  through the separate `pi-mcp-adapter` extension (pinned `2.32.1`; latest is
+  `7.0.0`). Measure three things: whether built-in MCP or codemode is active
+  under the flags this build passes; whether the adapter still loads on `1.4.0`;
+  and whether the two collide on `mcp__` tool names. **Replacing the adapter with
+  built-in MCP is a design decision and not part of this pin.** It could also
+  revisit PI-27, which is about `allowed_tools` governing individual MCP tools.
+- **Breaking changes that touch inputs we pass**: `--provider` without
+  `--model` now errors (`1.0.0`); `--model` now picks the provider that has
+  credentials when several match (`1.3.0`); `azure-openai-responses` was renamed
+  `azure` (`1.0.3`). Check how each meets the model and provider mapping
+  (PI-06, PI-07).
+- **What still needs measuring after the turn probe**: MCP end to end through
+  the adapter, and the container tier. The turn probe and `resume` already
+  passed locally.
+
+### Step 3 — claude-python: SDK `0.2.128` → `0.2.175`
+
+- **Work through CP-002's table row by row.** Most of it is private internals:
+  `client._query`, `_message_receive`, the buffer of 100, the 60 s control
+  timeout and `_LIMIT_MARKERS`. A green unit suite says these still import, not
+  that they still behave the same.
+- **`uv run pytest -m live`** (about 0.13 USD, ask first), and the interrupt and
+  cost probes CP-003 rests on.
+- `context_usage` now includes `System tools (deferred)` and `Skills`
+  categories. They pass through unchanged, but `capability-divergence.md` says
+  what the claude categories are, so check that row.
+
+### Step 4 — codex-python: `0.144.4` → `0.163.0`, needs code
+
+- **What moved**: `MessageRouter._pending_turn_notifications` is gone. In
+  `0.163.0` a turn is subscribed instead (`_turn_states`, `_turn_notifications`
+  holding `_TurnSubscription`). `sessions.py` reads the usage update a resume
+  sends again from the old structure (CX-70), so that read has to be rewritten
+  against the new one.
+- **Fix the guard's reach while this is open.** `assert_sdk_shape()` checks the
+  MCP seam and the resume seam together, so a move in the resume seam alone
+  answered **500 to every session with an MCP server**, although every MCP name
+  it checks was still present. Split it so each feature fails on its own seam.
+  For the resume seam, decide between `context_usage: null` and a refusal; the
+  guard's docstring argues for loud failure, so that is the default.
+- The 8 failing tests are 3 MCP, 1 shape, and 4 resume-replay. After the
+  rewrite: the live MCP probe and the resume-context probe.
+
+### Across all four
+
+- Build `0.32.0.dev1` snapshot images and offer them to Harness before the cut,
+  the way `0.31.0` was tested. The availability note's agent-version row reads
+  **moved: yes** for every build.
+- Every measurement above was taken on a Windows host and not in the images. The
+  container tier is part of each step, not an afterthought.
 
 ## Do not "fix" these
 
