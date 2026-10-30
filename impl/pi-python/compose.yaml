@@ -1,0 +1,217 @@
+# The shipped way to run this build. `docker compose up -d --build --wait`.
+#
+# **`--wait` is not optional and the reason is measured on a sibling build**: a
+# plain `docker compose up -d` reports `Started` and returns 0 for a container
+# that has already exited 3. `restart: "no"` below is what keeps a misconfigured
+# container dead and inspectable rather than looping.
+
+services:
+  agent-service:
+    build:
+      # The context is `impl/`, not this directory: the image copies
+      # `common/agent-spec/` as well, and a sibling outside the context cannot
+      # be COPYed. Same shape as the other three builds.
+      context: ..
+      dockerfile: pi-python/Dockerfile
+      args:
+        # Pinned here as well as in the Dockerfile so an upgrade is one edit in
+        # a file an operator reads, not a rebuild with a surprise inside it.
+        PI_VERSION: "0.85.1"
+        # Pinned for the same reason as the agent: this build measured its
+        # behaviour, and a floating version would move it silently.
+        PI_MCP_ADAPTER_VERSION: "2.32.1"
+
+    # An init at PID 1. The agent's tools background grandchildren, and without
+    # one they reparent to PID 1 and stay there as zombies.
+    init: true
+
+    ports:
+      # **127.0.0.1 and never "8000:8000".** There is no authentication on this
+      # API by default, so anyone who can open a TCP connection can create a
+      # session -- on a build whose agent has two shells and no sandbox. Put an
+      # authenticating proxy in front if you need it reachable; do not widen
+      # this line.
+      - "127.0.0.1:8000:8000"
+
+    environment:
+      # **The credential, and this build takes THREE.** `:-` and not `:?`: an
+      # absent key must reach the BOOT GATE, which refuses with a message naming
+      # what to set and the one channel it cannot see -- a credential already in
+      # the agent's own `auth.json`, which outranks every variable here
+      # (`PI-04`). Compose's own interpolation error would say only that a
+      # variable is unset, and the free conformance tier deliberately runs with
+      # no credential at all.
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      GEMINI_API_KEY: "${GEMINI_API_KEY:-}"
+
+      # **The only ENVIRONMENT variable that redirects this build's model
+      # traffic** (`PI-07`), and what `endpoint_source` publishes. There is no
+      # base URL to set: the agent reaches thirty-plus providers, has one base
+      # URL per provider, and **none of those variables works** (`PI-41`).
+      #
+      # A proxy is enough to send traffic somewhere. It is NOT enough to put a
+      # gateway in front of it: behind `CONNECT` an intermediary sees a host
+      # name and ciphertext, so it can neither swap a credential nor count
+      # tokens. That is what the map below is for.
+      HTTPS_PROXY: "${HTTPS_PROXY:-}"
+      HTTP_PROXY: "${HTTP_PROXY:-}"
+
+      # **Provider to gateway, as JSON** (`PI-44`). Set this and every listed
+      # provider is routed at your URL over plain HTTP -- readable, so a gateway
+      # can strip the container's credential, add its own and count the turn --
+      # and **a provider with no entry is refused with a 400** rather than
+      # reaching its vendor directly.
+      #
+      #   {"anthropic": {"base_url": "https://gw.example/anthropic",
+      #                  "headers": {"x-tenant-token": "..."}}}
+      #
+      # Do NOT put the API suffix in `base_url`: the agent appends its own, so a
+      # value ending `/v1` produces `/v1/v1/messages`.
+      #
+      # Empty means unfronted, which is the default and is a real deployment.
+      AGENT_SERVICE_PROVIDER_GATEWAYS: "${AGENT_SERVICE_PROVIDER_GATEWAYS:-}"
+
+      AGENT_SERVICE_WORKSPACE_DIR: /workspace
+      AGENT_SERVICE_AGENT_DIR_ROOT: /var/lib/agent-service/agent-dirs
+
+      # **A directory copied into every session's agent directory, and the ONLY
+      # way to put anything in one** (`PI-58`). The variable above names the
+      # PARENT of them -- each minted per session and removed with it -- so a
+      # file written there reaches no turn. Unset by default; the mount that
+      # backs it is the deployment's to add, and a path that is not a directory
+      # is a boot refusal rather than a silently empty agent directory.
+      AGENT_SERVICE_AGENT_HOME_SEED: ${AGENT_SERVICE_AGENT_HOME_SEED:-}
+      AGENT_SERVICE_SESSION_STORE: /var/lib/agent-service/sessions
+      # **Both gates are PASSED THROUGH, not hardcoded**, and defaulted on. A
+      # hardcoded `true` cannot be turned off by an env file, which is how a
+      # sibling build's free conformance tier -- which runs with no credential
+      # at all, on purpose -- got a container that exited 3 before any test ran.
+      AGENT_SERVICE_REQUIRE_CREDENTIALS: "${AGENT_SERVICE_REQUIRE_CREDENTIALS:-true}"
+      AGENT_SERVICE_REQUIRE_MOUNTS: "${AGENT_SERVICE_REQUIRE_MOUNTS:-true}"
+      AGENT_SERVICE_MAX_SESSIONS: "${AGENT_SERVICE_MAX_SESSIONS:-8}"
+      # **`provider/id` in ONE string** (`PI-10`), e.g.
+      # `anthropic/claude-haiku-4-5`. Left empty the agent chooses from whatever
+      # credentials it finds, which is a real deployment and an unpredictable
+      # bill -- so the line is here to be seen rather than discovered later.
+      AGENT_SERVICE_MODEL: "${AGENT_SERVICE_MODEL:-}"
+      # For a BARE model id. Ignored when the model above is qualified.
+      AGENT_SERVICE_PROVIDER: "${AGENT_SERVICE_PROVIDER:-}"
+      # The wall clock. Every turn is its own process here (`PI-11`), so this is
+      # enforced by killing that process group.
+      AGENT_SERVICE_TURN_TIMEOUT_S: "${AGENT_SERVICE_TURN_TIMEOUT_S:-600}"
+      AGENT_SERVICE_LOG_LEVEL: "${AGENT_SERVICE_LOG_LEVEL:-INFO}"
+      # **Set this and `/v1` requires `Authorization: Bearer <token>`.** Empty
+      # means the port is the only thing between a caller and a service whose
+      # documented capability is running tools.
+      #
+      # **Per instance, never per fleet.** The service pops it out of its
+      # environment so the agent does not INHERIT it, which is not the same as
+      # the agent being unable to read it: the agent runs as the same uid and
+      # `/proc/<pid>/environ` still carries the value.
+      AGENT_SERVICE_AUTH_TOKEN: "${AGENT_SERVICE_AUTH_TOKEN:-}"
+      # **Optional, and empty is a supported configuration.** Without it the
+      # history routes refuse with a named type and `/healthz` reports
+      # `database_usable: null`. Set it together with `--profile persistence`
+      # below; the two are separate on purpose, because a deployment may point
+      # at a database it does not run.
+      #
+      # **What it buys here is HISTORY, never continuity** (`PI-09`). This agent
+      # keeps its own session store on the `sessions` volume and resumes from
+      # it, so the database is a record and never a source.
+      AGENT_SERVICE_DATABASE_URL: "${AGENT_SERVICE_DATABASE_URL:-}"
+      AGENT_ID: "${AGENT_ID:-}"
+
+    volumes:
+      # READ-WRITE, and required. Without it the service exits 3 rather than
+      # writing into the container's own layer and discarding it on stop.
+      - ${WORKSPACE_HOST_PATH:?set WORKSPACE_HOST_PATH in .env}:/workspace
+      # **The conversation store, and it is the agent's own** (`PI-09`). Unlike
+      # the Gemini build this service keeps no rescued copy: `--session-dir`
+      # points the agent straight here, the file it writes stays put, and
+      # `options.resume` reads it. On a named volume so a conversation survives
+      # a container restart.
+      - sessions:/var/lib/agent-service/sessions
+      # One directory per session, holding that session's own agent state --
+      # auth cache, model store, settings (`PI-05`). Not persisted on purpose:
+      # it is scratch, and a stale agent directory outliving its session would
+      # be confusing rather than useful.
+      - agent-dirs:/var/lib/agent-service/agent-dirs
+
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    # **No `seccomp=unconfined`, unlike the Codex build.** That build needs it
+    # because bubblewrap must create a user namespace. This agent has NO sandbox
+    # of its own at all (`PI-30`) -- its own documentation says so -- so there is
+    # nothing to relax for, and this container is the entire boundary. That is
+    # the sharpest reason not to widen the port line above.
+
+    # NOT MEASURED ON THIS BUILD. Carried over from the Claude build's figures
+    # (~110 MiB and ~17 pids per session) as a ceiling rather than a fit. Expect
+    # pids to bind before memory, as they did on the Codex build. Measure before
+    # trusting either number.
+    mem_limit: 2048m
+    pids_limit: 512
+
+    # A turn is killed at AGENT_SERVICE_TURN_TIMEOUT_S; this must exceed it so a
+    # stop does not SIGKILL through an in-flight kill and leave a subprocess.
+    stop_grace_period: 30s
+
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+    # **Dead and inspectable beats looping.** Every boot refusal is a
+    # configuration error, and a restart policy would hide it behind a crash
+    # loop that never resolves itself.
+    restart: "no"
+
+  # --- persistence -----------------------------------------------------------
+  # OPTIONAL, and under a profile so the default `up` is unchanged. Bring it up
+  # only when you want history, and set AGENT_SERVICE_DATABASE_URL to match:
+  #
+  #   docker compose --profile persistence up -d --build --wait
+  #
+  # with, in .env:
+  #   POSTGRES_PASSWORD=...
+  #   AGENT_SERVICE_DATABASE_URL=postgresql+asyncpg://postgres:...@postgres:5432/agent
+  postgres:
+    profiles: ["persistence"]
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: agent
+      POSTGRES_USER: postgres
+      # **`:-` and NOT `:?`.** A required-variable check here fails
+      # `docker compose config`, `ps` and `logs` for EVERYONE, including anyone
+      # who never asked for persistence -- compose interpolates every service in
+      # the file whatever profiles are active.
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-}"
+    volumes:
+      - agent-db:/var/lib/postgresql/data
+      # Shared with the other builds: the same roles, so a database created by
+      # one is readable by another. Runs ONCE, on an empty data directory.
+      - ../common/db/init:/docker-entrypoint-initdb.d:ro
+
+    # NOT published to the host. The service reaches it over the compose
+    # network and nothing outside needs to.
+
+    healthcheck:
+      # `-U postgres -d agent` explicitly: bare `pg_isready` checks the default
+      # database and reports ready before ours exists on first boot.
+      test: ["CMD-SHELL", "pg_isready -U postgres -d agent"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+    restart: "no"
+
+volumes:
+  sessions:
+  agent-dirs:
+  agent-db:
