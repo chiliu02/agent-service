@@ -1,0 +1,42 @@
+# CI-ONLY OVERLAY. Never used alone -- `.ci/ci.py` (at the platform root) passes
+# it as
+#
+#     docker compose -f compose.yaml -f compose.ci.yaml -p agentsvc-ci-codex ...
+#
+# and nothing else in the repository references it. `compose.yaml` is unchanged
+# by design: it is the file the security comments describe, so the CI stack
+# differs from the real one by exactly what is in this overlay and nothing else.
+#
+# **One override, where the Claude build's overlay has two.** There is no
+# Postgres in this stack to publish a port for -- this build has no persistence
+# -- so the out-of-band migration route that overlay exists to open does not
+# apply here. When Plan 9 lands, copy that half too, and read the reasoning
+# there before deciding it is unnecessary.
+
+services:
+  agent-service:
+    # `!override`, not a plain list. Compose CONCATENATES sequence fields when it
+    # merges files, so without the tag this would ADD a second publish and leave
+    # the developer port bound as well -- which is the collision the overlay
+    # exists to avoid. Requires Compose v2.24+ for the tag.
+    #
+    # The default is 8110 and not 8100: 8100 is the CLAUDE stack's CI port, and
+    # a run that covers both implementations has both stacks up at once, or up
+    # in sequence against a port the previous teardown has not fully released.
+    ports: !override
+      - "127.0.0.1:${CI_HOST_PORT:-8110}:8000"
+
+  postgres:
+    # DELIBERATELY CONTRADICTS compose.yaml, which publishes no host port for
+    # Postgres and says why. That reasoning is about a DEPLOYMENT and still
+    # stands there.
+    #
+    # It cannot stand here: the service does NOT run migrations -- no image
+    # ships `alembic.ini` or a migration tree, and the 0.10.0 revision gate
+    # exists to keep that true -- so `ci.py` applies them from the host, and
+    # from the host means reachable from the host.
+    #
+    # No `!override` needed: compose.yaml gives this service no `ports` at all,
+    # so there is nothing to concatenate with.
+    ports:
+      - "127.0.0.1:${CI_PG_PORT:-15432}:5432"

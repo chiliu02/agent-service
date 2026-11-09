@@ -1,0 +1,46 @@
+# PROBE-ONLY OVERLAY. Never used alone, and never by `.ci/ci.py`:
+#
+#     docker compose -f compose.yaml -f spike/compose.sink.yaml -p codex-sink up
+#
+# It exists because the question it answers cannot be asked on a developer
+# machine. The app-server is what this build drives, it starts only on Linux,
+# and the equality that matters -- some header the AGENT sends equalling the
+# `sdk_session_id` THIS SERVICE reports -- can only be seen with something
+# standing where the model endpoint would be.
+#
+# **Nothing here reaches OpenAI.** The sink answers 401 and forwards nothing, so
+# a run is free and a dummy key is enough to pass the boot gate. That is the
+# whole reason this is a stack rather than a live probe with a budget.
+#
+# `compose.yaml` is untouched, as with the CI overlay: the probe stack differs
+# from the real one by exactly what is below.
+
+services:
+  sink:
+    image: python:3.13-slim
+    # Read-only: the sink is one file and has no business writing anything.
+    volumes:
+      - ./spike/sink_server.py:/sink_server.py:ro
+    command: ["python", "/sink_server.py", "8080"]
+    # NOT published to the host. Only the service on the compose network needs
+    # it, and the captures come back through `docker compose logs sink`.
+    restart: "no"
+
+  agent-service:
+    depends_on:
+      - sink
+    environment:
+      # **The variable alone does not move the endpoint** (CX-20) -- the
+      # app-server reads no variable for this. THIS SERVICE reads it and
+      # translates it into a named `model_providers` config override, which is
+      # the only route that works, so setting it here exercises exactly the path
+      # a real redirected deployment takes.
+      OPENAI_BASE_URL: http://sink:8080/v1
+      # Satisfies the boot gate and authenticates nothing. The sink refuses
+      # before any model is consulted, so its value is never load-bearing.
+      OPENAI_API_KEY: sink-dummy-key-not-a-credential
+      # The probe drives one turn and reads headers; a database would record a
+      # turn nobody reads.
+      AGENT_SERVICE_DATABASE_URL: ""
+    ports: !override
+      - "127.0.0.1:${SINK_HOST_PORT:-8130}:8000"

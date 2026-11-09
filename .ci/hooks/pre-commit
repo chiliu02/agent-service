@@ -1,0 +1,57 @@
+#!/bin/sh
+#
+# Runs `.ci/ci.py --fast` -- the freeze checks and the in-process suite with
+# `-m "not postgres"`. No Docker daemon, no container, no network, no cost.
+#
+# INSTALLED VIA core.hooksPath, NOT BY COPYING INTO .git/hooks. That directory
+# is not version-controlled, so a hook living there is invisible in review,
+# absent from a fresh clone, and unrecoverable if the checkout is thrown away.
+# This file is tracked; one command points git at it:
+#
+#     git config core.hooksPath .ci/hooks
+#
+# Git never installs hooks by itself, so that command is unavoidable on a new
+# clone. `git config --unset core.hooksPath` turns all of this off again.
+#
+# WHAT IT DOES NOT DO: stash your unstaged changes first. A strictly correct
+# pre-commit hook tests the INDEX, not the working tree, and the usual way to do
+# that is a stash around the run -- which can lose work when the hook or the
+# stash pop fails, and would be a bad trade for a check this cheap. So it tests
+# the WORKING TREE, and the case where that differs is worth knowing: edit a
+# published `spec/database/` file and DON'T stage it, and this blocks a commit that is
+# itself fine. That is arguably right -- the file is wrong on disk either way --
+# but it will not be obvious in the moment, so it is written down here.
+#
+# The full run (containers, both conformance stacks, boot gates) is minutes and
+# is deliberately NOT here: a hook slow enough to be bypassed gets bypassed, and
+# once you are in the habit of passing --no-verify the fast half stops running
+# too. Run `uv run --no-project python .ci/ci.py` by hand before a version bump or a
+# hand-off.
+#
+# ABOUT 28s TO PASS as of 2026-08-17, down from 93s, and it was all one stage:
+# `unit` runs its five suites concurrently now (93 -> 57s), then the two longest
+# went onto xdist (57 -> 44 -> 28s). Same commands, same markers -- the sum
+# became the maximum, and then the maximum got smaller twice. `--serial-unit`
+# puts the old one-at-a-time streaming back when a suite needs watching.
+#
+# Escape hatch is git's own:  git commit --no-verify
+
+set -e
+
+echo "pre-commit: .ci/ci.py --fast (git commit --no-verify skips it)"
+
+if ! command -v uv >/dev/null 2>&1; then
+    echo "pre-commit: uv is not on PATH -- skipping. Run ci.py by hand." >&2
+    exit 0
+fi
+
+# --fail-fast, unlike a deliberate run: a freeze violation should cost 3s here,
+# not the 45s it takes to also run a suite whose answer no longer matters. That
+# gap is what turns a hook into something you reach past with --no-verify.
+#
+# --no-project since Plan 8 step 1: `pyproject.toml` moved to
+# impl/claude-python/, so the platform root is no longer a uv project and a
+# plain `uv run` here would walk UP out of the repository looking for one.
+# .ci/ci.py is stdlib-only, so it needs an interpreter and nothing else -- which is
+# also what lets one runner drive an implementation that is not Python at all.
+exec uv run --no-project python .ci/ci.py --fast --fail-fast

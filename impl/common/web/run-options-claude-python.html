@@ -1,0 +1,879 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RunOptions builder — claude-python</title>
+<style>
+  :root {
+    --bg: #ffffff; --fg: #1a1a1a; --muted: #666; --line: #e2e2e2;
+    --panel: #fafafa; --accent: #2563eb; --ok: #15803d; --warn: #b45309;
+    --err: #b91c1c; --code: #f4f4f5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1115; --fg: #e6e6e6; --muted: #9aa0aa; --line: #262a33;
+      --panel: #161922; --accent: #60a5fa; --ok: #4ade80; --warn: #fbbf24;
+      --err: #f87171; --code: #1b1f28;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  code, pre, .mono { font-family: ui-monospace, SFMono-Regular, "Cascadia Code", Consolas, monospace; }
+  header {
+    display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+    padding: 10px 14px; border-bottom: 1px solid var(--line); background: var(--panel);
+    position: sticky; top: 0; z-index: 20;
+  }
+  header h1 { font-size: 15px; margin: 0 8px 0 0; font-weight: 650; letter-spacing: -.01em; }
+  input, select, textarea, button {
+    font: inherit; color: inherit; background: var(--bg);
+    border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px;
+  }
+  textarea { resize: vertical; width: 100%; }
+  button { cursor: pointer; background: var(--panel); white-space: nowrap; }
+  button:hover:not(:disabled) { border-color: var(--accent); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .pill {
+    display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px;
+    border-radius: 999px; border: 1px solid var(--line); font-size: 12px; color: var(--muted);
+  }
+  main { padding: 14px; }
+  .cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, 460px); gap: 14px; align-items: start; }
+  @media (max-width: 900px) { .cols { grid-template-columns: minmax(0, 1fr); } }
+  section.card {
+    border: 1px solid var(--line); border-radius: 8px; background: var(--panel);
+    padding: 12px 14px; margin-bottom: 14px;
+  }
+  section.card > h2 {
+    font-size: 12px; text-transform: uppercase; letter-spacing: .06em;
+    color: var(--muted); margin: 0 0 10px; font-weight: 650;
+  }
+  .field { padding: 10px 0; border-top: 1px solid var(--line); }
+  .field:first-of-type { border-top: 0; padding-top: 0; }
+  .field > label.name {
+    display: flex; align-items: center; gap: 8px; font-weight: 600; margin-bottom: 5px;
+  }
+  .field .src { font-size: 11px; color: var(--muted); font-weight: 400; }
+  .field .src b { font-weight: 600; color: var(--accent); }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .row input[type="text"], .row input[type="number"], .row select { min-width: 180px; }
+  .boxes { display: flex; flex-wrap: wrap; gap: 6px 14px; }
+  .boxes label { display: inline-flex; align-items: center; gap: 5px; }
+  .boxes label.off { color: var(--muted); text-decoration: line-through; }
+  .tip {
+    margin-top: 6px; font-size: 12.5px; color: var(--muted);
+    border-left: 2px solid var(--line); padding: 2px 0 2px 10px;
+  }
+  .tip p { margin: 0 0 6px; } .tip p:last-child { margin-bottom: 0; }
+  .tip code { background: var(--code); padding: 0 3px; border-radius: 3px; font-size: 12px; }
+  .why { font-size: 12px; color: var(--muted); }
+  .why b { color: var(--fg); }
+  pre.out {
+    background: var(--code); border: 1px solid var(--line); border-radius: 6px;
+    padding: 10px; overflow-x: auto; margin: 0; font-size: 12.5px; line-height: 1.45;
+  }
+  ul.plain { margin: 0; padding-left: 18px; } ul.plain li { margin: 3px 0; }
+  pre.out.muted { color: var(--muted); }
+  .warn { color: var(--warn); } .err { color: var(--err); } .ok { color: var(--ok); }
+  .sticky { position: sticky; top: 56px; }
+  details summary { cursor: pointer; color: var(--muted); font-size: 12px; }
+  .mcp-row { display: grid; grid-template-columns: 150px 110px minmax(0,1fr) auto; gap: 6px; margin-bottom: 6px; }
+  @media (max-width: 700px) { .mcp-row { grid-template-columns: minmax(0,1fr); } }
+  .bad { border-color: var(--err) !important; }
+</style>
+</head>
+<body>
+<header>
+  <h1>RunOptions builder</h1>
+  <span class="pill mono" id="p-impl"></span>
+  <span class="pill mono" id="p-spec"></span>
+  <span class="pill mono" id="p-sdk"></span>
+  <span class="pill" id="p-sessions"></span>
+</header>
+
+<main class="cols">
+  <div>
+    <section class="card">
+      <h2>Generated form</h2>
+      <div id="form"></div>
+    </section>
+
+    <section class="card">
+      <h2>Not rendered, and why</h2>
+      <div id="omitted"></div>
+    </section>
+
+    <section class="card">
+      <h2>The capabilities this page was generated from</h2>
+      <p class="why">
+        Nothing below is hard-coded for this build: the form above is produced by one
+        <code>buildForm(caps, openapi)</code> that reads only these two documents.
+        <b>Edit the JSON and the form re-renders</b> — paste a live
+        <code>GET /v1/deployment</code> to see what your own container would produce.
+      </p>
+      <textarea id="caps" rows="12" class="mono" spellcheck="false"></textarea>
+      <div class="row" style="margin-top:8px">
+        <button id="apply" class="primary">Re-render</button>
+        <button id="reset">Reset to this build</button>
+        <span id="caps-err" class="err"></span>
+      </div>
+    </section>
+  </div>
+
+  <div class="sticky">
+    <section class="card">
+      <h2>RunOptions — only what you changed</h2>
+      <pre class="out" id="out"></pre>
+      <div class="row" style="margin-top:8px">
+        <button id="copy">Copy request body</button>
+        <span class="why" id="copied"></span>
+      </div>
+      <p class="why" style="margin-bottom:0">
+        Omission means <b>server default</b>. A field you have not touched is left out
+        rather than pinned to the value shown.
+      </p>
+    </section>
+
+    <section class="card">
+      <h2>POST /v1/sessions</h2>
+      <pre class="out" id="body"></pre>
+    </section>
+
+    <section class="card">
+      <h2>Refused by this build</h2>
+      <div id="refused"></div>
+    </section>
+
+    <section class="card">
+      <h2>Read these before trusting the form</h2>
+      <div id="notes"></div>
+    </section>
+  </div>
+</main>
+
+<script>
+"use strict";
+
+/* The two documents this page is generated from. `caps` is the example carried by
+   this build's own OpenAPI document -- its real /v1/deployment answer, with the
+   versions redacted. `props` is components.schemas.RunOptions.properties from the
+   same document, which is where every field tip and the one JSON-Schema default
+   come from. */
+const BUILD_CAPS = {
+ "spec": {
+  "document_version": "0.21.0-snapshot"
+ },
+ "impl": {
+  "name": "claude-python",
+  "version": "x.y.z"
+ },
+ "sdk": {
+  "name": "claude-agent-sdk",
+  "version": "x.y.z"
+ },
+ "sdk_version": "x.y.z",
+ "permission_modes": [
+  {
+   "id": "default",
+   "name": "Default",
+   "description": "Standard permission behaviour; prompts for dangerous operations. With no approval channel on /v1 a prompt cannot be answered, so in practice this denies what it would have asked about."
+  },
+  {
+   "id": "acceptEdits",
+   "name": "Accept edits",
+   "description": "Auto-accept file edit operations."
+  },
+  {
+   "id": "plan",
+   "name": "Plan",
+   "description": "Planning mode: no execution of tools."
+  },
+  {
+   "id": "dontAsk",
+   "name": "Do not ask",
+   "description": "Never prompt; deny anything not pre-approved."
+  },
+  {
+   "id": "bypassPermissions",
+   "name": "Bypass permissions",
+   "description": "Bypass all permission checks. **The container is still the boundary** -- this service runs with permission enforcement off and Bash enabled, so the checks this bypasses were not what confined the agent."
+  },
+  {
+   "id": "auto",
+   "name": "Auto",
+   "description": "Present in the SDK's own permission-mode union and absent from its documentation, so what it does here is the SDK's behaviour and is not described by this service."
+  }
+ ],
+ "effort_levels": [
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max"
+ ],
+ "setting_sources": [
+  "user",
+  "project",
+  "local"
+ ],
+ "default_model": "claude-sonnet-5",
+ "default_allowed_tools": [
+  "Read",
+  "Write",
+  "Edit",
+  "Bash",
+  "Glob",
+  "Grep",
+  "WebSearch",
+  "WebFetch"
+ ],
+ "always_disallowed_tools": [
+  "AskUserQuestion"
+ ],
+ "limits": {
+  "default_max_turns": 30.0,
+  "max_allowed_turns": 200.0,
+  "default_max_budget_usd": 2.0,
+  "max_allowed_budget_usd": 10.0,
+  "default_request_timeout_s": 600.0,
+  "max_allowed_timeout_s": 1800.0,
+  "session_idle_ttl_s": 1800.0
+ },
+ "turn_token_overhead": null,
+ "usage_counts_tool_calls": null,
+ "model_usage_scope": "cumulative",
+ "reports_cost_usd": true,
+ "workspace_dir": "workspace",
+ "reference_dirs": [],
+ "credential_sources": [
+  "ANTHROPIC_API_KEY",
+  "ANTHROPIC_AUTH_TOKEN"
+ ],
+ "provider_selectors": [
+  "CLAUDE_CODE_USE_BEDROCK",
+  "CLAUDE_CODE_USE_VERTEX",
+  "CLAUDE_CODE_USE_FOUNDRY"
+ ],
+ "max_sessions": 8,
+ "require_credentials": true,
+ "auth_required": false,
+ "allow_mcp_servers": true,
+ "sdk_session_id_scope": "conversation",
+ "llm_correlation": {
+  "header": "x-claude-code-session-id",
+  "measured": true
+ },
+ "allow_supplied_sdk_session_id": true,
+ "query_reports_sdk_session_id": false,
+ "query_consumes_a_session_slot": false,
+ "unsupported_options": [],
+ "sandbox": {
+  "network_access": true,
+  "confines_writes_to_workspace": false
+ },
+ "mcp": {
+  "transports": [
+   "stdio",
+   "sse",
+   "http"
+  ],
+  "http_headers": "any",
+  "server_name_pattern": null,
+  "tool_call": {
+   "request_timeout_s": 60,
+   "idle_timeout_s": 300,
+   "total_timeout_s": 100000,
+   "progress_resets_idle": true
+  }
+ },
+ "strict_mcp_config": true,
+ "require_mounts": true,
+ "permission_enforcement": "none"
+};
+const PROPS = {
+ "model": {
+  "anyOf": [
+   {
+    "type": "string",
+    "minLength": 1
+   },
+   {
+    "type": "null"
+   }
+  ],
+  "title": "Model",
+  "description": "Omit to use the server default. An empty string is rejected rather than treated as omission.",
+  "examples": [
+   "claude-sonnet-5"
+  ]
+ },
+ "resume": {
+  "anyOf": [
+   {
+    "type": "string",
+    "minLength": 1
+   },
+   {
+    "type": "null"
+   }
+  ],
+  "title": "Resume",
+  "description": "Continue a previous conversation. This is the **SDK** session id (`sdk_session_id`), NOT the service-side `session_id`.\n\nWith a database configured the conversation survives a service restart; without one, only while the CLI's on-disk transcript remains. Resumes a CONVERSATION, not an in-flight stream -- a turn interrupted by a disconnect is not resumable."
+ },
+ "system_prompt": {
+  "anyOf": [
+   {
+    "type": "string"
+   },
+   {
+    "additionalProperties": true,
+    "type": "object"
+   },
+   {
+    "type": "null"
+   }
+  ],
+  "title": "System Prompt",
+  "description": "A plain string, or a preset object such as {\"type\": \"preset\", \"preset\": \"claude_code\", \"append\": \"...\"}.\n\n**The string REPLACES the agent's own framing** -- safety rules, tool protocol, workflows. The preset object is the only form that keeps them and appends, and not every build has one: check `unsupported_options` for `{field: system_prompt, types: [\"object\"]}`.\n\n**Not a substitute for ambient configuration**: it does not become a memory file or register a skill, and suppresses nothing on disk -- on one build the workspace's context files are appended after it."
+ },
+ "allowed_tools": {
+  "anyOf": [
+   {
+    "items": {
+     "type": "string"
+    },
+    "type": "array"
+   },
+   {
+    "type": "null"
+   }
+  ],
+  "title": "Allowed Tools",
+  "description": "Tools this session may use, in this build's own names -- `default_allowed_tools` lists the published ones.\n\n**An unrecognised name is ignored, never refused.** `Reed` for `Read` grants nothing and reports nothing.\n\nNames come from three places, and only the first can be published: **built-ins** (fixed per build and platform, not per model); **MCP tools** from the servers you send, in that build's spelling (`mcp__<server>__<tool>`); **skills, subagents and plugins** the agent reads from the container's disk.\n\n**Grants permission, not visibility**: an ungranted tool is still offered to the model, attempted, and denied -- which costs a turn. `disallowed_tools` removes it. Not a path or command restriction."
+ },
+ "disallowed_tools": {
+  "anyOf": [
+   {
+    "items": {
+     "type": "string"
+    },
+    "type": "array"
+   },
+   {
+    "type": "null"
+   }
+  ],
+  "title": "Disallowed Tools",
+  "description": "Removes a tool outright. Where `allowed_tools` grants permission without hiding anything, this is the field that takes a capability away.\n\n**An unrecognised name is ignored here too**, so a misspelled denial denies nothing -- the more dangerous direction of the same behaviour. Everything in `always_disallowed_tools` is added whatever you send."
+ },
+ "permission_mode": {
+  "anyOf": [
+   {
+    "type": "string"
+   },
+   {
+    "type": "null"
+   }
+  ],
+  "title": "Permission Mode",
+  "description": "How much the agent may do without asking.\n\n**The ids differ per build** -- read `permission_modes[].id` for this one's, and `.description` for what each does here. An id it does not publish is a 400.\n\n**Not a boundary on any build.** What confines the agent is the container, the sandbox and (on one build) a generated tool policy: see `permission_enforcement` and `sandbox`."
+ },
+ "effort": {
+  "anyOf": [
+   {
+    "type": "string",
+    "enum": [
+     "low",
+     "medium",
+     "high",
+     "xhigh",
+     "max"
+    ]
+   },
+   {
+    "type": "null"
+   }
+  ],
+  "title": "Effort",
+  "description": "How much reasoning effort to spend.\n\nVocabulary is `effort_levels[]`; **empty means the build has no equivalent and refuses the field with a 400**. A build publishes only the levels it delivers exactly -- one maps a higher level down and omits it rather than letting you believe it was honoured."
+ },
+ "setting_sources": {
+  "anyOf": [
+   {
+    "items": {
+     "type": "string",
+     "enum": [
+      "user",
+      "project",
+      "local"
+     ]
+    },
+    "type": "array"
+   },
+   {
+    "type": "null"
+   }
+  ],
+  "title": "Setting Sources",
+  "description": "Which ambient on-disk configuration the agent loads. Server default is none; a build with no such concept publishes `[]` and refuses the field.\n\n**A switch over what is already on the container's disk -- never a way to send it.** Memory files, skills, subagents, commands, plugins and settings are read inside the container, and no `RunOptions` field on any build can supply them. This is the only lever, it is coarse, and one build does not have it at all.\n\nTreat that disk as part of the deployment, not part of the request."
+ },
+ "max_turns": {
+  "anyOf": [
+   {
+    "type": "integer",
+    "minimum": 1.0
+   },
+   {
+    "type": "null"
+   }
+  ],
+  "title": "Max Turns",
+  "description": "Bound on the agent's turns within one request.\n\nEnforced only where `limits.default_max_turns` and `max_allowed_turns` are published; elsewhere it is a 400 rather than accepted and ignored. **Above the ceiling is a 400, never a clamp** -- a silently shortened budget produces a stop you cannot explain."
+ },
+ "max_budget_usd": {
+  "anyOf": [
+   {
+    "type": "number",
+    "exclusiveMinimum": 0.0
+   },
+   {
+    "type": "null"
+   }
+  ],
+  "title": "Max Budget Usd",
+  "description": "**NOT A SPEND CAP. It cannot bound what a session costs.** It is enforced by the CLI against its cumulative figure, and that figure does not move for an INTERRUPTED turn -- so a caller that can interrupt turns can spend without limit under any value set here. The only effective control is an account- or organisation-level budget."
+ },
+ "timeout_s": {
+  "anyOf": [
+   {
+    "type": "integer",
+    "minimum": 1.0
+   },
+   {
+    "type": "null"
+   }
+  ],
+  "title": "Timeout S",
+  "description": "Wall clock for this request, in seconds; expiry answers **504**.\n\nEnforced by this service rather than by any agent SDK, so it means the same on every build. The ceiling is `limits.max_allowed_timeout_s` and asking for more is a 400, not a clamp -- **checked at session creation on one build and per turn on another**, so a value accepted at create can still be refused later."
+ },
+ "working_directory": {
+  "anyOf": [
+   {
+    "type": "string"
+   },
+   {
+    "type": "null"
+   }
+  ],
+  "title": "Working Directory",
+  "description": "Where the agent starts work. Relative paths the agent uses resolve from here, and it decides which project-level configuration the session picks up -- a memory file or a settings file is found relative to this directory.\n\n**A path RELATIVE to `deployment.config.workspace_dir`** -- `src/api`, not `/workspace/src/api`. It must stay under the root (`..` is refused) and **must already exist**: the directory is never created from request input.\n\n**Not confinement on most builds** -- the mount and the container are the boundary, and a working directory restricts nothing a tool may reach. On one build the agent's own guard is anchored here, so it also narrows what its file tools can open.\n\n**Renamed from `workspace_subdir` and the old name is gone.** It is not an error to send it -- unknown properties are ignored -- so a client that keeps the old spelling silently gets the workspace root."
+ },
+ "include_partial_messages": {
+  "type": "boolean",
+  "title": "Include Partial Messages",
+  "description": "Emit output as it is produced rather than only when a message is complete -- on the SSE routes, token-level deltas instead of one event per message.\n\nAccepted by every build, and **the one option whose default comes from this schema** rather than from server config, so `false` is the answer rather than a placeholder.",
+  "default": false
+ },
+ "include_raw": {
+  "anyOf": [
+   {
+    "type": "boolean"
+   },
+   {
+    "type": "null"
+   }
+  ],
+  "title": "Include Raw",
+  "description": "Include the full SDK message dump on each event."
+ },
+ "mcp_servers": {
+  "anyOf": [
+   {
+    "additionalProperties": {
+     "anyOf": [
+      {
+       "$ref": "#/components/schemas/McpStdioServer"
+      },
+      {
+       "$ref": "#/components/schemas/McpSseServer"
+      },
+      {
+       "$ref": "#/components/schemas/McpHttpServer"
+      }
+     ]
+    },
+    "type": "object"
+   },
+   {
+    "type": "null"
+   }
+  ],
+  "title": "Mcp Servers",
+  "description": "MCP servers for this run, keyed by server name. Omit for none.\n\nThree transports: `stdio` (this service spawns a subprocess -- read `McpStdioServer` first), `sse` and `http` (no subprocess). The SDK's fourth shape, `sdk`, is absent on purpose: it carries a live in-process object and cannot cross an HTTP boundary.\n\n**Refused with 400 when the deployment sets `AGENT_SERVICE_ALLOW_MCP_SERVERS=false`.** Check `Capabilities.allow_mcp_servers` before relying on this field, the same way `credential_sources` is checked before injecting a key.\n\n`env` on a stdio server and `headers` on an http/sse one are the two positions a caller substitutes credentials into. Neither is ever logged by this service.",
+  "examples": [
+   {
+    "acme": {
+     "type": "http",
+     "url": "https://mcp.example.com/mcp"
+    }
+   }
+  ]
+ },
+ "strict_mcp_config": {
+  "anyOf": [
+   {
+    "type": "boolean"
+   },
+   {
+    "type": "null"
+   }
+  ],
+  "title": "Strict Mcp Config",
+  "description": "When true, ONLY the servers in `mcp_servers` are used and every other source the CLI would consult is ignored -- project `.mcp.json`, user and global settings, plugin-provided servers.\n\n**This service defaults it to TRUE**, which is not the SDK's default of false. The reason is the workspace: it is mounted from the host and is WRITABLE BY THE AGENT, so a `.mcp.json` sitting in it -- committed by someone else, or written by a previous turn -- would otherwise add servers this caller never asked for and cannot see in its own request. The contract is that what you sent is what runs. Set false to opt into the CLI's own discovery.\n\nNote this service already passes `setting_sources` explicitly (default `[]`). Whether that alone suppresses `.mcp.json` is **not measured** -- this flag does not depend on the answer."
+ }
+};
+
+const $ = (id) => document.getElementById(id);
+const el = (tag, attrs = {}, ...kids) => {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (v == null || v === false) continue;
+    if (k === "class") n.className = v;
+    else if (k.startsWith("on")) n.addEventListener(k.slice(2), v);
+    else if (k === "html") n.innerHTML = v;
+    else n.setAttribute(k, v === true ? "" : String(v));
+  }
+  for (const kid of kids.flat()) if (kid != null) n.append(kid);
+  return n;
+};
+const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+
+/* The descriptions are Markdown and some run to several paragraphs. Rendering them
+   as a title attribute would truncate exactly the sentence that prevents a mistake,
+   so they get bold, code and paragraphs, and are shown in full. */
+function md(text) {
+  return text
+    .split(/\n\n+/)
+    .map(
+      (p) =>
+        "<p>" +
+        esc(p)
+          .replace(/`([^`]+)`/g, "<code>$1</code>")
+          .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+          .replace(/\n/g, " ") +
+        "</p>",
+    )
+    .join("");
+}
+
+const jsonType = (v) =>
+  v === null ? "null" : Array.isArray(v) ? "array" : typeof v === "object" ? "object" : typeof v;
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
+/* ---- the algorithm, verbatim from docs/run-options-from-capabilities.md ---- */
+
+function refused(caps, field, value) {
+  return (caps.unsupported_options ?? []).some(
+    (e) =>
+      e.field === field &&
+      (e.types == null || e.types.includes(jsonType(value))) &&
+      (e.values == null || e.values.some((x) => same(x, value))),
+  );
+}
+const available = (caps, field) => !refused(caps, field, undefined);
+
+function buildForm(caps, props) {
+  const lim = caps.limits ?? {};
+  const tip = (f) => props[f]?.description ?? null;          // 11 of 16 fields have one
+  const dflt = (f, capValue) => capValue ?? props[f]?.default ?? null;
+  const out = [];
+  const omitted = [];
+  const add = (field, spec) => {
+    if (!available(caps, field)) return;                      // refused -> not a control
+    out.push({ field, help: tip(field), value: null, ...spec });
+  };
+  const hide = (field, why) => omitted.push({ field, why });
+
+  add("model", { control: "text", value: dflt("model", caps.default_model), from: "default_model" });
+  add("resume", { control: "text", placeholder: "sdk_session_id", from: null });
+
+  if (caps.permission_modes?.length)
+    add("permission_mode", {
+      control: "select",
+      // The one field whose per-OPTION help is published.
+      options: caps.permission_modes.map((m) => ({ value: m.id, label: m.name, help: m.description })),
+      placeholder: "server default",
+      optionsFrom: "permission_modes[]",
+    });
+  else hide("permission_mode", "this build publishes no <b>permission_modes</b>");
+
+  if (available(caps, "effort")) {
+    if (caps.effort_levels?.length)
+      add("effort", { control: "select", options: caps.effort_levels, placeholder: "server default", optionsFrom: "effort_levels[]" });
+    else hide("effort", "<b>effort_levels</b> is empty — an empty vocabulary is a hide, not an empty select");
+  } else hide("effort", "in <b>unsupported_options</b> — sending it is a 400");
+
+  if (available(caps, "setting_sources")) {
+    if (caps.setting_sources?.length)
+      add("setting_sources", { control: "boxes", options: caps.setting_sources, value: [], optionsFrom: "setting_sources[]" });
+    else hide("setting_sources", "<b>setting_sources</b> is empty");
+  } else hide("setting_sources", "in <b>unsupported_options</b> — sending it is a 400");
+
+  if (available(caps, "allowed_tools")) {
+    if (caps.default_allowed_tools?.length) {
+      const vocab = [...caps.default_allowed_tools, ...(caps.always_disallowed_tools ?? [])];
+      add("allowed_tools", {
+        control: "boxes", options: vocab, disabled: caps.always_disallowed_tools ?? [],
+        value: [...caps.default_allowed_tools], optionsFrom: "default_allowed_tools + always_disallowed_tools",
+        from: "default_allowed_tools (all of them)",
+      });
+      add("disallowed_tools", { control: "boxes", options: vocab, value: [], optionsFrom: "default_allowed_tools + always_disallowed_tools" });
+    } else
+      hide("allowed_tools", "<b>default_allowed_tools</b> is empty — this build does not govern by tool list, so there is no vocabulary to offer");
+  } else hide("allowed_tools", "in <b>unsupported_options</b> — this build governs by sandbox, not by tool name");
+
+  for (const [field, dKey, maxKey, min, step] of [
+    ["max_turns", "default_max_turns", "max_allowed_turns", 1, 1],
+    ["max_budget_usd", "default_max_budget_usd", "max_allowed_budget_usd", 0, 0.5],
+    ["timeout_s", "default_request_timeout_s", "max_allowed_timeout_s", 1, 30],
+  ]) {
+    if (!available(caps, field)) { hide(field, "in <b>unsupported_options</b> — sending it is a 400"); continue; }
+    add(field, {
+      control: "number", min, step, max: lim[maxKey] ?? null,
+      value: dflt(field, lim[dKey] ?? null),
+      placeholder: lim[dKey] == null ? "server default" : null,
+      from: lim[dKey] != null ? `limits.${dKey}` : null,
+      cap: lim[maxKey] != null ? `limits.${maxKey}` : null,
+    });
+  }
+
+  add("system_prompt", {
+    control: "textarea",
+    // The preset object is a separate shape and can be refused on its own.
+    presetRefused: refused(caps, "system_prompt", {}),
+  });
+  add("workspace_subdir", { control: "text", prefix: caps.workspace_dir });
+  add("include_partial_messages", { control: "check", value: dflt("include_partial_messages", null), from: "schema default" });
+  add("include_raw", { control: "check", value: false });
+
+  if (caps.allow_mcp_servers) {
+    add("mcp_servers", {
+      control: "mcp", value: {},
+      transports: caps.mcp?.transports ?? [], headers: caps.mcp?.http_headers,
+      namePattern: caps.mcp?.server_name_pattern ?? null, toolCall: caps.mcp?.tool_call ?? {},
+    });
+    add("strict_mcp_config", {
+      control: "check", value: dflt("strict_mcp_config", caps.strict_mcp_config),
+      locked: refused(caps, "strict_mcp_config", !caps.strict_mcp_config),
+      from: "strict_mcp_config",
+    });
+  } else {
+    hide("mcp_servers", "<b>allow_mcp_servers</b> is false — and note this is NOT always mirrored into unsupported_options");
+    hide("strict_mcp_config", "no servers can be sent, so there is nothing to be strict about");
+  }
+  return { fields: out, omitted };
+}
+
+/* ---- rendering ---- */
+
+let CAPS = BUILD_CAPS;
+let FORM = [];
+const state = {};      // field -> current value
+
+function control(f) {
+  const set = (v) => { state[f.field] = v; paint(); };
+  switch (f.control) {
+    case "text": {
+      const i = el("input", { type: "text", value: state[f.field] ?? "", placeholder: f.placeholder ?? "",
+        oninput: (e) => set(e.target.value) });
+      return el("div", { class: "row" }, f.prefix ? el("span", { class: "mono why" }, f.prefix + "/") : null, i);
+    }
+    case "number": {
+      const i = el("input", { type: "number", min: f.min, max: f.max ?? false, step: f.step,
+        value: state[f.field] ?? "", placeholder: f.placeholder ?? "",
+        oninput: (e) => set(e.target.value === "" ? null : Number(e.target.value)) });
+      const over = f.max != null && state[f.field] != null && state[f.field] > f.max;
+      if (over) i.classList.add("bad");
+      return el("div", { class: "row" }, i,
+        f.max != null ? el("span", { class: "why" }, `max ${f.max}`) : el("span", { class: "why" }, "no ceiling published"),
+        over ? el("span", { class: "err" }, "above the published ceiling — this is a 400") : null);
+    }
+    case "select": {
+      const opts = f.options.map((o) => (typeof o === "string" ? { value: o, label: o } : o));
+      const s = el("select", { onchange: (e) => set(e.target.value || null) },
+        el("option", { value: "" }, f.placeholder ?? "—"),
+        opts.map((o) => el("option", { value: o.value, selected: state[f.field] === o.value }, o.label)));
+      const chosen = opts.find((o) => o.value === state[f.field]);
+      return el("div", {}, el("div", { class: "row" }, s,
+          state[f.field] ? el("code", { class: "why" }, JSON.stringify(state[f.field])) : null),
+        chosen?.help ? el("div", { class: "tip", html: md(chosen.help) }) : null);
+    }
+    case "boxes": {
+      const cur = state[f.field] ?? [];
+      return el("div", { class: "boxes" }, f.options.map((o) => {
+        const off = (f.disabled ?? []).includes(o);
+        return el("label", { class: off ? "off" : "", title: off ? "always_disallowed_tools — filtered out whatever you send" : "" },
+          el("input", { type: "checkbox", disabled: off, checked: cur.includes(o),
+            onchange: (e) => set(e.target.checked ? [...cur, o] : cur.filter((x) => x !== o)) }), o);
+      }));
+    }
+    case "check":
+      return el("label", { class: "row" },
+        el("input", { type: "checkbox", checked: !!state[f.field], disabled: f.locked,
+          onchange: (e) => set(e.target.checked) }),
+        el("span", { class: "why" }, f.locked ? "locked — the other value is refused by unsupported_options" : ""));
+    case "textarea":
+      return el("div", {},
+        el("textarea", { rows: 3, spellcheck: "false", value: state[f.field] ?? "",
+          oninput: (e) => set(e.target.value || null) }),
+        el("div", { class: "why" }, f.presetRefused
+          ? "the preset object form is refused here — string only"
+          : "the preset object form is also accepted on this build"));
+    case "mcp":
+      return mcpControl(f, set);
+  }
+}
+
+function mcpControl(f, set) {
+  const cur = state[f.field] ?? {};
+  const rows = Object.entries(cur);
+  const re = f.namePattern ? new RegExp(f.namePattern) : null;
+  const wrap = el("div", {});
+  rows.forEach(([name, srv], i) => {
+    const bad = re && !re.test(name);
+    wrap.append(el("div", { class: "mcp-row" },
+      el("input", { type: "text", value: name, class: bad ? "bad mono" : "mono", placeholder: "name",
+        oninput: (e) => { const next = {}; rows.forEach(([n, s], j) => (next[j === i ? e.target.value : n] = s)); set(next); } }),
+      el("select", { onchange: (e) => { const next = { ...cur }; next[name] = { ...srv, type: e.target.value }; set(next); } },
+        f.transports.map((t) => el("option", { value: t, selected: srv.type === t }, t))),
+      el("input", { type: "text", class: "mono", value: srv.type === "stdio" ? (srv.command ?? "") : (srv.url ?? ""),
+        placeholder: srv.type === "stdio" ? "command" : "url",
+        oninput: (e) => { const next = { ...cur };
+          next[name] = srv.type === "stdio" ? { ...srv, command: e.target.value } : { ...srv, url: e.target.value };
+          set(next); } }),
+      el("button", { onclick: () => { const next = { ...cur }; delete next[name]; set(next); } }, "remove")));
+    if (bad) wrap.append(el("div", { class: "err why" }, `name does not match server_name_pattern ${f.namePattern} — refused with 400`));
+  });
+  wrap.append(el("div", { class: "row" },
+    el("button", { onclick: () => set({ ...cur, ["server" + (rows.length + 1)]: { type: f.transports[0] } }) }, "add server"),
+    el("span", { class: "why" },
+      `transports: ${f.transports.join(", ")} · headers: ${f.headers}` +
+      (f.namePattern ? ` · names must match ${f.namePattern}` : " · no name rule"))));
+  const tc = f.toolCall ?? {};
+  const bounds = Object.entries(tc).filter(([, v]) => v != null).map(([k, v]) => `${k}=${v}`);
+  wrap.append(el("div", { class: "why" },
+    bounds.length ? "tool call: " + bounds.join(", ") : "tool call: no bound published (null is not 'no bound')"));
+  return wrap;
+}
+
+function render() {
+  const built = buildForm(CAPS, PROPS);
+  FORM = built.fields;
+  for (const f of FORM) if (!(f.field in state)) state[f.field] = f.value;
+  for (const k of Object.keys(state)) if (!FORM.some((f) => f.field === k)) delete state[k];
+
+  $("p-impl").textContent = `${CAPS.impl?.name ?? "?"} ${CAPS.impl?.version ?? ""}`;
+  $("p-spec").textContent = `document ${CAPS.spec?.document_version ?? "?"}`;
+  $("p-sdk").textContent = `${CAPS.sdk?.name ?? "?"} ${CAPS.sdk?.version ?? ""}`;
+  $("p-sessions").textContent = `max_sessions ${CAPS.max_sessions ?? "?"}`;
+
+  const form = $("form");
+  form.replaceChildren(...FORM.map((f) =>
+    el("div", { class: "field" },
+      el("label", { class: "name" }, f.field,
+        el("span", { class: "src" },
+          f.optionsFrom ? el("span", {}, "values from ", el("b", {}, f.optionsFrom), " · ") : null,
+          f.from ? el("span", {}, "default from ", el("b", {}, f.from)) : "no default published",
+          f.cap ? ` · capped by ${f.cap}` : "")),
+      control(f),
+      f.help ? el("details", {}, el("summary", {}, "what this field means"), el("div", { class: "tip", html: md(f.help) })) : null)));
+
+  $("omitted").replaceChildren(
+    built.omitted.length
+      ? el("ul", { class: "plain" }, built.omitted.map((o) => el("li", { html: `<code>${o.field}</code> — ${o.why}` })))
+      : el("div", { class: "why ok" }, "Nothing hidden: every RunOptions field is available on this build."));
+
+  const un = CAPS.unsupported_options ?? [];
+  $("refused").replaceChildren(
+    un.length
+      ? el("ul", { class: "plain" }, un.map((e) => el("li", { html:
+          `<code>${e.field}</code> — ` +
+          (e.types ? `only the ${e.types.map((t) => `<code>${t}</code>`).join("/")} form` :
+           e.values ? `only ${e.values.map((v) => `<code>${JSON.stringify(v)}</code>`).join(", ")}` :
+           "the whole field") + " → 400" })))
+      : el("div", { class: "why ok" }, "unsupported_options is empty on this build."));
+
+  $("notes").replaceChildren(el("ul", { class: "plain" }, [
+    `sandbox.network_access is ${CAPS.sandbox?.network_access} — that is a statement about the sandboxed shell only, never about whether the agent can reach the web.`,
+    `sandbox.confines_writes_to_workspace is ${CAPS.sandbox?.confines_writes_to_workspace}.`,
+    CAPS.allow_supplied_sdk_session_id
+      ? "POST /v1/sessions accepts a caller-supplied sdk_session_id."
+      : "POST /v1/sessions refuses a caller-supplied sdk_session_id with a 400 — never a silent drop.",
+    `sdk_session_id_scope is "${CAPS.sdk_session_id_scope}" — ` +
+      (CAPS.sdk_session_id_scope === "turn" ? "it names ONE TURN; never key on it." : "stable across ordinary turns."),
+    `model_usage_scope is "${CAPS.model_usage_scope}" — ` +
+      ({ per_turn: "sum across turns.", cumulative: "difference consecutive turns; summing double-counts.",
+         not_reported: "skip it; model_usage is null on every turn." }[CAPS.model_usage_scope] ?? "?"),
+    CAPS.reports_cost_usd ? "Cost fields carry money on this build." : "reports_cost_usd is false — the cost fields are null permanently, not pending.",
+    CAPS.turn_token_overhead ? `turn_token_overhead ~${CAPS.turn_token_overhead} input tokens before your prompt: turn COUNT predicts spend here, not prompt length.` : null,
+    (CAPS.always_disallowed_tools ?? []).length
+      ? `always_disallowed_tools ${JSON.stringify(CAPS.always_disallowed_tools)} is a FILTER, not a rejection — naming one is not a 400, it is dropped.`
+      : null,
+  ].filter(Boolean).map((t) => el("li", {}, t))));
+
+  paint();
+}
+
+/* Submit only what the user changed: omission IS the server default. */
+function collect() {
+  const body = {};
+  for (const f of FORM) {
+    const v = state[f.field];
+    if (v == null || v === "" || (Array.isArray(v) && !v.length)) continue;
+    if (typeof v === "object" && !Array.isArray(v) && !Object.keys(v).length) continue;
+    if (same(v, f.value)) continue;                 // untouched -> leave it out
+    body[f.field] = v;
+  }
+  return body;
+}
+
+function paint() {
+  const options = collect();
+  $("out").textContent = JSON.stringify(options, null, 2);
+  $("out").classList.toggle("muted", !Object.keys(options).length);
+  $("body").textContent = JSON.stringify({ title: "example", options }, null, 2);
+}
+
+$("apply").addEventListener("click", () => {
+  try {
+    CAPS = JSON.parse($("caps").value);
+    $("caps-err").textContent = "";
+    for (const k of Object.keys(state)) delete state[k];
+    render();
+  } catch (e) { $("caps-err").textContent = String(e.message ?? e); }
+});
+$("reset").addEventListener("click", () => {
+  CAPS = BUILD_CAPS;
+  $("caps").value = JSON.stringify(BUILD_CAPS, null, 1);
+  $("caps-err").textContent = "";
+  for (const k of Object.keys(state)) delete state[k];
+  render();
+});
+$("copy").addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText($("body").textContent);
+    $("copied").textContent = "copied";
+    setTimeout(() => ($("copied").textContent = ""), 1500);
+  } catch { $("copied").textContent = "select the text and copy it"; }
+});
+
+$("caps").value = JSON.stringify(BUILD_CAPS, null, 1);
+render();
+</script>
+</body>
+</html>
