@@ -1,0 +1,77 @@
+name: Bug report
+description: Something behaves differently from what the specification says
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Not for security issues.** If you think you have found something
+        exploitable, use the *Report a vulnerability* button on the Security
+        tab instead. See [SECURITY.md](https://github.com/chiliu02/agent-service/blob/main/SECURITY.md) — it also
+        explains why "the agent ran a command I did not expect" is the product
+        working rather than a bug.
+
+  - type: dropdown
+    id: build
+    attributes:
+      label: Which build?
+      description: One repository, three implementations. They differ on purpose.
+      options:
+        - claude-python
+        - codex-python
+        - gemini-python
+        - impl/common (shared models, database layer)
+        - spec/ or the conformance suite
+        - not sure
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: >
+        `GET /v1/capabilities` reports `impl.name` and `impl.version`, and the
+        image carries both as labels. Include the document version too if you
+        have it.
+      placeholder: "impl.version 0.19.0, document 0.19.0"
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: >
+        Include the request and the response if the problem is on the HTTP
+        surface. Redact credentials — and note that a malformed body can carry
+        an MCP bearer token, which is why a 422 omits `input`.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected, and what says so
+      description: >
+        A clause in the specification, a field on `/v1/capabilities`, a row in
+        `docs/capability-divergence.md`, or a conformance test. A difference
+        between two builds is not automatically a defect — the divergence table
+        is where the deliberate ones are recorded.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction
+      description: >
+        A reproduction against `impl/gemini-python/tests/fake_cli_agent.py` is
+        worth far more than a description — it needs no credential and emits
+        the real stream shapes.
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Host OS, Docker version, and whether you ran the image or the source.

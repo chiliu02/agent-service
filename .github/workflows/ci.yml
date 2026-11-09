@@ -1,0 +1,54 @@
+name: ci
+
+# The same runner developers use, driven by GitHub instead of by hand.
+#
+# `--fast` ONLY, and that is deliberate. It runs freeze + links + references +
+# unit with `-m "not postgres"`, so it needs no Docker daemon and no network.
+# The `container` and `gates` stages build three images and start three compose
+# stacks; they are minutes of runner time and are the half you run locally
+# before a release, not on every push.
+#
+# NOTHING HERE CAN SPEND MONEY. Every pytest invocation carries
+# `-m 'not live'` from its own pyproject.toml, and no stage passes `-m live`
+# or unsets it. No credential is configured for this workflow, and none is
+# needed -- the paid tier is unreachable from here by design.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fast:
+    name: ci.py --fast
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # `freeze` reads git history and resolves release tags, both of
+          # which are absent from the default depth-1 checkout.
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Pin Python
+        run: uv python install 3.13
+
+      # `--no-project` is required, not stylistic: the platform root is not a
+      # uv project -- pyproject.toml belongs to each implementation -- so a
+      # plain `uv run` walks UP out of the repository looking for one.
+      - name: Run the checks
+        run: uv run --no-project python .ci/ci.py --fast
