@@ -316,10 +316,25 @@ they want it — because that is what the snapshot is for.
    or not at all — the `container` stage compares it against the document, but
    only once an image exists, which is too late. The **schema** label moves on
    its own stream and is untouched by a document cut.
-3. **Regenerate every document**, one command per implementation. The last one to
-   run recomputes `core-<version>.json` over all of them.
+3. **Regenerate every document**, one command per implementation, run from that
+   implementation's directory. The generators do not share a name:
 
-   **The first two runs EXIT NON-ZERO with an AS-23 refusal, and that is
+   ```bash
+   (cd impl/pi-python     && uv run python scripts/publish_document.py)  # FIRST: no core
+   (cd impl/claude-python && uv run python scripts/dump-schema.py)
+   (cd impl/gemini-python && uv run python scripts/dump-openapi.py)
+   (cd impl/codex-python  && uv run python scripts/dump-schema.py)       # recomputes the core
+   ```
+
+   **Three of them recompute `core-<version>.json` over every document on disk,
+   and `pi-python`'s does not** -- it writes its own document and nothing else.
+   So the core comes from the last of the other three, and **pi goes first**.
+   Run it last and the core keeps its old version while all four documents have
+   the new one (found cutting `0.33.0`, where codex's generator was run again to
+   fix it). Check that `git diff` shows `core-<version>.json` with the version
+   moved.
+
+   **The first runs EXIT NON-ZERO with an AS-23 refusal, and that is
    expected** (Agent Harness, 2026-08-19, who hit it rehearsing this). Until every
    document has been regenerated the set is half bare and half snapshot, so
    `.info.version` and `PrebootSpec.document_version.const` differ across it and
@@ -333,7 +348,7 @@ they want it — because that is what the snapshot is for.
    ```
 
    **Those two leaves and no others is the signature of the expected case.** It
-   clears on the third run, when all three agree. **Anything else in that list is
+   clears on the last run, when every document agrees. **Anything else in that list is
    a real AS-23 breaking change** and needs a stated reason and a notice — so read
    the list rather than the exit code.
 4. **The core-shrinkage check now applies.** It is skipped for a `-snapshot`,
