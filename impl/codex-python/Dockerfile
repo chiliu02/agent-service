@@ -207,7 +207,7 @@ ENV AGENT_SERVICE_WORKSPACE_DIR=/workspace \
 # third copy of a value that moves every build is maintenance with no reader.
 LABEL org.opencontainers.image.title="agent-service-codex-python"
 LABEL com.npf.agent-service.impl="codex-python"
-LABEL com.npf.agent-service.document-version="0.34.0"
+LABEL com.npf.agent-service.document-version="0.35.0-snapshot"
 LABEL com.npf.agent-service.schema-revision="e7a4c2b19f06"
 
 EXPOSE 8000

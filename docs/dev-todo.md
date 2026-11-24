@@ -55,21 +55,21 @@ consequence is that priority is now mostly a choice rather than a queue.
 
 ### Open
 
-**One item, 19: the agent pins for `0.32.0`.** Before it, nothing: item 17 lived for one day. `0.19.0` was cut on 2026-08-19 and
+**Nothing** (2026-11-24). Item 19, the agent pins, shipped in `0.32.0` on
+2026-11-09 and was closed late: all four of its steps had been marked DONE since
+2026-10-31 while its row still sat here. Before it, item 17 lived for one day.
+`0.19.0` was cut on 2026-08-19 and
 both sides are green against it; item 15 — the consumer's find on 2026-09-08 —
 was wired the same day, and item 16, which wiring it turned up, was decided the
 same day too. Item 17 was a measurement owed to Agent Harness, and their own
 reply retired half of it before it was taken.
 
-| # | Item | Blocked on |
-|---|---|---|
-| 19 | **Move all four agent pins for `0.32.0`** — Gemini CLI first, because it is owed to Agent Harness in `gemini-resume-resends-tool-results` | nothing; codex needs code first — [below](#19-the-agent-pins-for-0320--planned-2026-10-30) |
-| ~~17~~ | ~~Measure the two `claude-python` claims owed to Agent Harness~~ | **retired 2026-09-15, both halves.** (a) `setting_sources` defaulting to empty needs no measurement any more: Harness replied that it sends `"user"` on every dispatched turn to a build that accepts the field, so the default is not in its path. (b) The resume divergence was settled in `CP-153` and acted on rather than measured on the wire — the override is a single unconditional expression in the pinned SDK (`{**options.env, "CLAUDE_CONFIG_DIR": str(materialized.config_dir)}`), a live turn could only have confirmed it, and it is now published as `agent_home.read_on_resume: "settings_only"` with the `settings.json` half repaired |
-
 ### Closed
 
 | # | Item | |
 |---|---|---|
+| ~~19~~ | ~~Move all four agent pins for `0.32.0`~~ | **shipped in `0.32.0`, cut 2026-11-09.** Gemini CLI `0.66.0`, Pi `1.4.0`, Claude Agent SDK `0.2.175`, Codex `0.163.0` (the one that needed code, `CX-72`). Harness was told on `gemini-resume-resends-tool-results` and in the `0.32.0` release note — [below](#19-the-agent-pins-for-0320--shipped-in-0320-2026-11-09) |
+| ~~17~~ | ~~Measure the two `claude-python` claims owed to Agent Harness~~ | **retired 2026-09-15, both halves.** (a) `setting_sources` defaulting to empty needs no measurement any more: Harness replied that it sends `"user"` on every dispatched turn to a build that accepts the field, so the default is not in its path. (b) The resume divergence was settled in `CP-153` and acted on rather than measured on the wire — the override is a single unconditional expression in the pinned SDK (`{**options.env, "CLAUDE_CONFIG_DIR": str(materialized.config_dir)}`), a live turn could only have confirmed it, and it is now published as `agent_home.read_on_resume: "settings_only"` with the `settings.json` half repaired |
 | ~~18~~ | ~~`is_error` on `pi-python` answered a different question from the one the schema documents~~ | **fixed 2026-09-17**, the day the consumer reported it. It was `not outcome_recorded` — *did this service get an envelope* — where the schema promises *the agent reported failure*. The two differ exactly when the agent records its own failure AND hands us the record, which is what a vendor `429` is: four turns came back `200` with an empty result and `is_error: false`. `PI-61`, and `GP-75` for the check that cleared the sibling build — [below](#18-is_error-on-pi-python-answered-a-different-question--fixed-2026-09-17) |
 | ~~9~~ | ~~Cutting `0.19.0`~~ | **cut 2026-08-19** — tag `release-0.19.0` at `979450d`, `agent-service-openapi:0.19.0` in `maven-releases`, three images at `0.19.0`. Agent Harness moved its four constants, dropped `.changing()`, and reports **547 passed, 0 failed** with AS-24 green on all three. **The cut found two defects in its own procedure**, both now enforced rather than written down: `freeze` refuses a bare version whose implementation versions the registry already holds, and the capabilities-example scan no longer confuses two versions that are the same string |
 | ~~16~~ | ~~Conversations on disk are kept forever, and nothing says so~~ | **decided 2026-09-08 (user): KEEP, and publish the map.** Each build keeps whatever its SDK or CLI creates — that is the agent's runtime environment, not data this service invented — and no TTL, sweep or purge is added. What was owed was documentation, and each build's guide now carries a *what is written to disk* table: path, who writes it, what is in it, and whether it is scratch or kept — [below](#16-conversations-on-disk-are-kept-forever-and-nothing-says-so--decided-2026-09-08) |
@@ -91,7 +91,7 @@ reply retired half of it before it was taken.
 | ~~1b~~ | ~~Two asks from Agent Studio~~ | both shipped 2026-08-07 — [below](#1b-two-asks-from-agent-studio--both-shipped) |
 | ~~2~~ | ~~Authentication (Q6)~~ | shipped 0.11.0 — [below](#2-authentication--q6-shipped-in-0110-optional-off-by-default) |
 
-## 19. The agent pins for `0.32.0` — PLANNED 2026-10-30
+## 19. The agent pins for `0.32.0` — SHIPPED IN 0.32.0, 2026-11-09
 
 **`0.31.0` shipped on the old pins on purpose** (user, 2026-10-30): nothing in it
 needed a newer agent, and the four `0.31.0.dev1` images were what Harness had
