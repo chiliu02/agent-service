@@ -1,0 +1,43 @@
+# CI-ONLY OVERLAY. Never used alone -- `.ci/ci.py` at the platform root passes it
+# as
+#
+#     docker compose -f compose.yaml -f compose.ci.yaml -p agentsvc-ci-gemini ...
+#
+# and nothing else in the repository references it. `compose.yaml` is unchanged
+# by design: it is the file the security comments describe, so the CI stack
+# differs from the real one by exactly what is in this overlay and nothing else.
+#
+# **Two published ports, and both exist so the CI stack can run BESIDE a stack
+# the operator already has up.** Neither weakens the boundary: both keep the
+# `127.0.0.1:` prefix that compose.yaml calls its most important line.
+
+services:
+  agent-service:
+    # `!override`, not a plain list. Compose CONCATENATES sequence fields when it
+    # merges files, so without the tag this would ADD a second publish and leave
+    # the developer port bound as well -- the collision this overlay exists to
+    # avoid. Requires Compose v2.24+.
+    #
+    # 8120 and not 8100 or 8110: those are the Claude and Codex CI ports, and a
+    # run covering all three has every stack up at once, or up in sequence
+    # against a port the previous teardown has not fully released.
+    ports: !override
+      - "127.0.0.1:${CI_HOST_PORT:-8120}:8000"
+
+  postgres:
+    # DELIBERATELY CONTRADICTS compose.yaml, which publishes no host port for
+    # Postgres and says why. That reasoning is about a DEPLOYMENT and still
+    # stands there; it cannot stand here, because **the service does not run
+    # migrations** -- the image copies no `alembic.ini` and no `migrations/`, so
+    # a deployment applies them out of band, and out of band for a host running
+    # `uv run alembic` means reachable from the host.
+    #
+    # **The same host port as the Claude stack's**, which is safe only because
+    # `ci.py` tears each stack down with `down -v` before starting the next.
+    # Two stacks up at once would collide here, and that is a property of the
+    # runner rather than of this file.
+    #
+    # No `!override` needed: compose.yaml gives this service no `ports` at all,
+    # so there is nothing to concatenate with.
+    ports:
+      - "127.0.0.1:${CI_PG_PORT:-15432}:5432"

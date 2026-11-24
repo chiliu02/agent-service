@@ -1,0 +1,83 @@
+[project]
+# NOT in the `agent-service-*` family, deliberately: this is not a service and
+# not an implementation. It is the SPECIFICATION rendered in Python -- the
+# pydantic models that generate the published OpenAPI document.
+#
+# The name is load-bearing. `impl/common/`'s rule is "share what the
+# specification determines, never what the SDK determines", and a package called
+# `agent_spec` makes SDK-specific code impossible to justify adding to it. A
+# name like `common` or `shared` would not.
+name = "agent-spec"
+version = "0.16.0"
+description = "The agent-service specification, rendered as pydantic models."
+authors = [
+    { name = "Chi Liu" }
+]
+# SPDX expression, PEP 639. Text in the repository's root `LICENSE`.
+license = "Apache-2.0"
+requires-python = ">=3.13"
+# pydantic ONLY, and the guard is unchanged. No FastAPI, no SDK, no database
+# driver. If THIS list ever needs to grow, that is the signal something
+# implementation-shaped is being smuggled in -- read impl/common/README.md
+# before adding a line.
+dependencies = [
+    "pydantic>=2.11.7",
+]
+
+# THE DATABASE HALF, BEHIND AN EXTRA -- and the extra is what keeps the guard
+# above meaningful (2026-08-08).
+#
+# AS-30 makes the database schema the specification's, exactly as AS-24 makes
+# the OpenAPI document the specification's, so both belong in this package:
+# `agent_spec.openapi` generates one, `agent_spec.db` conforms to the other.
+#
+# **It is optional because not every build persists.** `codex-python` imports
+# this package for its API models and has no database at all; an unconditional
+# SQLAlchemy dependency would put a driver in that image to serve
+# `/v1/capabilities`. A build that persists asks for `agent-spec[db]`; one that
+# does not changes nothing.
+[project.optional-dependencies]
+db = [
+    "sqlalchemy[asyncio]>=2.0",
+    "asyncpg>=0.31.0",
+    # `agent_spec.db.testing` -- the Postgres harness. It lives in the package
+    # rather than in a test tree because both this package's tests and every
+    # implementation's need it, and a harness copied into two trees is two
+    # harnesses that drift.
+    "testcontainers[postgres]>=4.13.1",
+    # Alembic is TOOLING, not a runtime dependency -- no service ever runs a
+    # migration and no image ships the tree (the 0.10.0 boot gate exists to
+    # keep that true). It is here because `agent_spec.db.testing` drives the
+    # shared tree to migrate a throwaway database, and because
+    # `scripts/dump-schema.py` renders the published DDL from it.
+    "alembic>=1.18.5",
+]
+
+[dependency-groups]
+dev = [
+    "anyio>=4.14.2",
+    "pytest>=8.4.2",
+    "pytest-asyncio>=1.4.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Same as every implementation. The persistence tests are async, and without
+# this pytest reports "async def functions are not natively supported" and
+# FAILS them -- which is at least loud, unlike the version of this mistake that
+# collects them and quietly runs nothing.
+asyncio_mode = "auto"
+# The database half is what this package's tests exercise, and every one of them
+# needs a real Postgres. `-m "not postgres"` is what `ci.py --fast` passes to
+# skip them on a machine with no daemon, exactly as it does for the
+# implementations.
+markers = [
+    "postgres: needs a real PostgreSQL. Skipped by --fast.",
+]
+
+[build-system]
+requires = ["uv_build>=0.11.27,<0.12.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "agent_spec"

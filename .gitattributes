@@ -1,0 +1,20 @@
+# NARROW ON PURPOSE. Not `* text=auto`.
+#
+# The only thing here is the git hooks, and they need it: they are `#!/bin/sh`
+# scripts executed by Git Bash on a Windows host, where Git for Windows sets
+# `core.autocrlf=true` globally. Without this line a fresh checkout writes them
+# with CRLF endings and every one of them dies with
+#
+#     .git/hooks/pre-commit: /bin/sh^M: bad interpreter: No such file or directory
+#
+# `git add` warned about exactly this ("LF will be replaced by CRLF the next
+# time Git touches it") when the hook was first tracked. The working copy was
+# fine; the NEXT clone would not have been.
+#
+# A repository-wide `* text=auto` is the portable fix for the line-ending
+# problem generally -- `.env.compose.example` recommends it, and it would make
+# the container's GIT_AUTOCRLF variable unnecessary. It is not done here because
+# it renormalizes every tracked file, and `schema/` is frozen by AS-24: files
+# that must never change are the wrong thing to rewrite in passing. Widen this
+# deliberately, in its own commit, not as a side effect.
+.ci/hooks/* text eol=lf

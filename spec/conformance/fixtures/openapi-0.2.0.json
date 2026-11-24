@@ -1,0 +1,2267 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Agent Service",
+    "summary": "HTTP access to the Claude Agent SDK.",
+    "description": "Runs the Claude Agent SDK behind an OpenAPI interface. Every SDK message is returned normalized so the agent loop is observable.",
+    "version": "0.2.0"
+  },
+  "paths": {
+    "/healthz": {
+      "get": {
+        "tags": [
+          "meta"
+        ],
+        "summary": "Healthz",
+        "operationId": "healthz_healthz_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/capabilities": {
+      "get": {
+        "tags": [
+          "meta"
+        ],
+        "summary": "Capabilities",
+        "operationId": "capabilities_v1_capabilities_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Capabilities"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/query": {
+      "post": {
+        "tags": [
+          "query"
+        ],
+        "summary": "Run the agent to completion and return the full message stream",
+        "operationId": "run_query_v1_query_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QueryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid options or a limit above its cap",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The agent process failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "The run exceeded its time budget",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/query/stream": {
+      "post": {
+        "tags": [
+          "query"
+        ],
+        "summary": "Run the agent, streaming each SDK message as it arrives",
+        "description": "Server-Sent Events. Each `data:` line is one `AgentEvent` and the `event:` name is its type (system, assistant, user, result, stream_event, rate_limit). A terminal `event: done` carries the `RunResponse` summary with an empty `events` list, since the events were already streamed. A failure mid-stream arrives as `event: error` carrying a `Problem` document.",
+        "operationId": "run_query_stream_v1_query_stream_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QueryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "text/event-stream": {}
+            }
+          },
+          "400": {
+            "description": "Invalid options or a limit above its cap",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/sessions": {
+      "get": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "List Sessions",
+        "operationId": "list_sessions_v1_sessions_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionList"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Open a multi-turn session",
+        "operationId": "create_session_v1_sessions_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionRecord"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid options or a limit above its cap",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "max_sessions reached",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "The session did not open in time",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/sessions/{sid}": {
+      "get": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Get Session",
+        "operationId": "get_session_v1_sessions__sid__get",
+        "parameters": [
+          {
+            "name": "sid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Sid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionRecord"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The context-usage control request failed in a way the service does not classify -- including the SDK's own 60s control timeout",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The context-usage control request could not be delivered",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Close a session and free its subprocess",
+        "operationId": "delete_session_v1_sessions__sid__delete",
+        "parameters": [
+          {
+            "name": "sid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Sid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "No such session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The session could not be torn down; the subprocess may still be alive",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Change the model or permission mode",
+        "description": "Both fields are optional and an omitted field is left unchanged, so an empty body is a valid no-op. An omitted field is NOT forwarded as null: the SDK reads a null model as 'use the default', so doing that would silently reset it. Every other option is fixed for the session's lifetime.\n\n**A change takes effect immediately, including on a turn that is already in flight.** This is measured, not assumed: it applies at the very next inference of the turn currently draining, not from the next turn, so a mid-turn model change re-prices the remainder of that turn and its `model_usage` reports both models. It is safe -- the in-flight turn is not disturbed and still ends normally -- but expect `total_cost_usd` to move by more than the new model alone would suggest.",
+        "operationId": "update_session_v1_sessions__sid__patch",
+        "parameters": [
+          {
+            "name": "sid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Sid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionRecord"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The session is closed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The agent did not answer the control request in time",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The control request could not be delivered",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/sessions/{sid}/transcript": {
+      "get": {
+        "tags": [
+          "history"
+        ],
+        "summary": "Read a session's stored transcript",
+        "description": "Oldest first, paginated. Reads STORED rows -- unlike `GET /v1/sessions/{sid}`, this issues no control request to the agent and cannot fail because the CLI is wedged.\n\n404 with `type: .../persistence-disabled` means the service has no database configured; 404 with the ordinary title means no such session was ever recorded.",
+        "operationId": "get_transcript_v1_sessions__sid__transcript_get",
+        "parameters": [
+          {
+            "name": "sid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Sid"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 1000,
+              "minimum": 1,
+              "default": 200,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "After"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TranscriptPage"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such recorded session, or history is not enabled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/runs/{run_id}": {
+      "get": {
+        "tags": [
+          "history"
+        ],
+        "summary": "Read one stored run or turn",
+        "operationId": "get_run_v1_runs__run_id__get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StoredRun"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such recorded run, or history is not enabled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/sessions/{sid}/messages": {
+      "post": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Send one turn and wait for it to complete",
+        "operationId": "send_turn_v1_sessions__sid__messages_post",
+        "parameters": [
+          {
+            "name": "sid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Sid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TurnRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A turn is already running, or the session is closed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The turn failed in a way the service does not classify",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The agent process failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "The turn exceeded its time budget",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/sessions/{sid}/messages/stream": {
+      "post": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Send one turn, streaming each message as it arrives",
+        "description": "Server-Sent Events. Each `data:` line is one `AgentEvent`; the `event:` name is its type. A terminal `event: done` carries the turn summary with an empty `events` list.\n\n**Errors.** This route resolves the session and takes its turn *before* committing the response, so anything that goes wrong up to and including the turn's FIRST message is a real problem document with a real status code -- 404, 409, or 504 if the turn times out before producing anything. Only a failure from the second message onwards arrives in-band, as `event: error` carrying the same `Problem` body; no `done` frame follows it, so `done` vs. `error` is how a client tells a finished turn from a broken one.\n\nNote this differs from `/v1/query/stream`, which commits its 200 before the first message and therefore reports even a zero-message failure in-band.",
+        "operationId": "stream_turn_v1_sessions__sid__messages_stream_post",
+        "parameters": [
+          {
+            "name": "sid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Sid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TurnRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "text/event-stream": {}
+            }
+          },
+          "404": {
+            "description": "No such session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A turn is already running, or the session is closed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "The turn exceeded its time budget before its first message",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/sessions/{sid}/interrupt": {
+      "post": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Ask a running turn to stop",
+        "description": "Returns immediately, and returns 200 whether or not there was anything to stop -- `interrupted` says which. Asking to stop a turn that has already finished is not an error: that race is unavoidable for any client.\n\n`interrupted: false` is NOT implied by `status`, and neither field can be derived from the other -- see `InterruptResult`.\n\nThe turn currently draining will end with `is_error: true` and `subtype: 'error_during_execution'` -- the SDK reports an interrupted turn identically to a failed one -- but its summary will carry `interrupted: true`, which is the only reliable way to tell the two apart.",
+        "operationId": "interrupt_session_v1_sessions__sid__interrupt_post",
+        "parameters": [
+          {
+            "name": "sid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Sid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InterruptResult"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The control request failed in a way the service does not classify -- including the SDK's own 60s control timeout on a running turn, which this service does not bound",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The control request could not be delivered",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "The agent did not answer the control request in time",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AgentEvent": {
+        "properties": {
+          "seq": {
+            "type": "integer",
+            "title": "Seq"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "system",
+              "assistant",
+              "user",
+              "result",
+              "stream_event",
+              "rate_limit",
+              "unknown"
+            ],
+            "title": "Type"
+          },
+          "subtype": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subtype"
+          },
+          "content": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content"
+          },
+          "raw": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Raw"
+          }
+        },
+        "type": "object",
+        "required": [
+          "seq",
+          "type"
+        ],
+        "title": "AgentEvent",
+        "description": "One SDK message, normalized.\n\nNo session_id: it is not uniformly available across message types, so it is\nreported once per run on RunResponse instead."
+      },
+      "Capabilities": {
+        "properties": {
+          "sdk_version": {
+            "type": "string",
+            "title": "Sdk Version"
+          },
+          "permission_modes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Permission Modes"
+          },
+          "effort_levels": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Effort Levels"
+          },
+          "setting_sources": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Setting Sources"
+          },
+          "default_model": {
+            "type": "string",
+            "title": "Default Model"
+          },
+          "default_allowed_tools": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Default Allowed Tools"
+          },
+          "always_disallowed_tools": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Always Disallowed Tools"
+          },
+          "limits": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "type": "object",
+            "title": "Limits"
+          },
+          "workspace_dir": {
+            "type": "string",
+            "title": "Workspace Dir"
+          },
+          "reference_dirs": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Reference Dirs"
+          },
+          "permission_enforcement": {
+            "type": "string",
+            "enum": [
+              "none",
+              "hook"
+            ],
+            "title": "Permission Enforcement",
+            "description": "\"none\" (the default): no in-process write-confinement control is wired up; the container and its mount split are the only boundary. \"hook\": a PreToolUse hook confines Write/Edit/NotebookEdit to the workspace -- measured live to actually run and actually block a write (docs/spike-findings.md). This hook confines Write/Edit/NotebookEdit ONLY -- Bash is enabled by default and is NOT confined by it, so a shell redirect (e.g. `echo x > /etc/foo`) bypasses it entirely; the container remains the only real boundary against Bash. can_use_tool is not offered here: it was measured to never fire under this service's allowed_tools configuration, so it would misrepresent what is actually enforced."
+          }
+        },
+        "type": "object",
+        "required": [
+          "sdk_version",
+          "permission_modes",
+          "effort_levels",
+          "setting_sources",
+          "default_model",
+          "default_allowed_tools",
+          "always_disallowed_tools",
+          "limits",
+          "workspace_dir",
+          "reference_dirs",
+          "permission_enforcement"
+        ],
+        "title": "Capabilities"
+      },
+      "ContextUsage": {
+        "properties": {
+          "categories": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Categories"
+          }
+        },
+        "type": "object",
+        "title": "ContextUsage",
+        "description": "Raw passthrough of ClaudeSDKClient.get_context_usage().\n\nCategories are reported by the CLI (System tools, Skills, Messages,\nAutocompact buffer, Free space, ...) and their exact set is not part of\nany contract, so they are carried through unmodelled."
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "Health": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "const": "ok",
+            "title": "Status"
+          },
+          "credentials_configured": {
+            "type": "boolean",
+            "title": "Credentials Configured"
+          },
+          "workspace_dir": {
+            "type": "string",
+            "title": "Workspace Dir"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "credentials_configured",
+          "workspace_dir"
+        ],
+        "title": "Health"
+      },
+      "InterruptResult": {
+        "properties": {
+          "interrupted": {
+            "type": "boolean",
+            "title": "Interrupted",
+            "description": "True only if a control request was genuinely sent to the agent. False means there was nothing to interrupt -- not an error. This is NOT implied by `status`: a turn abandoned mid-drain (the usual result of a dropped SSE connection) leaves the session `idle` while the agent process is still producing, and interrupting it does send a real control request."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "idle",
+              "running",
+              "closed"
+            ],
+            "title": "Status",
+            "description": "The session's status immediately AFTER the request. A turn can end while the control request is in flight, so this may differ from the status the request arrived to find."
+          }
+        },
+        "type": "object",
+        "required": [
+          "interrupted",
+          "status"
+        ],
+        "title": "InterruptResult",
+        "description": "What an interrupt request actually did.\n\nInterrupting is idempotent and never an error: a turn can end between a\ncaller deciding to stop it and the request arriving, which is a race no\nclient can avoid. Hence 200 rather than 409 -- and a body rather than a\nbare 204, which would report success for a request that did nothing."
+      },
+      "Problem": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "default": "about:blank"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "status": {
+            "type": "integer",
+            "title": "Status"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "required": [
+          "title",
+          "status"
+        ],
+        "title": "Problem",
+        "description": "RFC 7807 problem document."
+      },
+      "QueryRequest": {
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Prompt",
+            "examples": [
+              "List the files in this directory"
+            ]
+          },
+          "options": {
+            "$ref": "#/components/schemas/RunOptions"
+          }
+        },
+        "type": "object",
+        "required": [
+          "prompt"
+        ],
+        "title": "QueryRequest"
+      },
+      "RunOptions": {
+        "properties": {
+          "model": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model",
+            "description": "Omit to use the server default. An EMPTY string is rejected rather than treated as omission (follow-up item 9): `build_options` resolves the model with `req.model or settings.default_model`, so an empty string would be silently swallowed and the caller given a model it did not ask for, with no indication anything was wrong.",
+            "examples": [
+              "claude-sonnet-5"
+            ]
+          },
+          "resume": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resume",
+            "description": "Continue a previous conversation. This is the **SDK** session id (`sdk_session_id` on a session record or run), NOT the service-side `session_id` -- they are different identifiers and only the SDK's means anything to the CLI. With a database configured, the transcript is materialized from storage when the local file is gone, which is what makes a session survive a service restart. Without one, resume works only while the CLI's own on-disk transcript is still present. This resumes a CONVERSATION on a new connection. It does not replay an in-flight stream: a turn interrupted by a disconnect is not resumable, and reconnecting mid-turn is a separate problem."
+          },
+          "system_prompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "System Prompt",
+            "description": "A plain string, or a preset object such as {\"type\": \"preset\", \"preset\": \"claude_code\", \"append\": \"...\"}."
+          },
+          "allowed_tools": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allowed Tools",
+            "description": "Grants a tool capability. NOT a path or command restriction: 'Read' permits reading any path, and scoped syntax such as 'Bash(git status:*)' is not enforced. Path and command policy is applied server-side."
+          },
+          "disallowed_tools": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disallowed Tools",
+            "description": "Removes a capability outright. AskUserQuestion is always included."
+          },
+          "permission_mode": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "default",
+                  "acceptEdits",
+                  "plan",
+                  "bypassPermissions",
+                  "dontAsk",
+                  "auto"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Permission Mode"
+          },
+          "effort": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effort"
+          },
+          "setting_sources": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "user",
+                    "project",
+                    "local"
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Setting Sources",
+            "description": "Which ambient .claude config to load. Server default is none."
+          },
+          "max_turns": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Turns"
+          },
+          "max_budget_usd": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Budget Usd",
+            "description": "**NOT A SPEND CAP. It cannot bound what a session costs.** The value is passed straight to the CLI, which enforces it against its own cumulative figure -- the same one `total_cost_usd` reports -- and that figure does not move for an INTERRUPTED turn. Measured: with `max_budget_usd=0.05`, eight consecutive start-then-interrupt turns advanced it by $0.000649 and the budget did not trip; six ordinary turns on the same connection then tripped it at $0.0585 (`limit_hit: \"budget\"`), so the mechanism was live throughout. A caller who can interrupt turns can spend without limit under any value set here. The only effective control is an account- or organisation-level budget. See README.md and docs/deployment.md."
+          },
+          "timeout_s": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timeout S"
+          },
+          "workspace_subdir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workspace Subdir",
+            "description": "Relative path under the workspace root to use as cwd."
+          },
+          "include_partial_messages": {
+            "type": "boolean",
+            "title": "Include Partial Messages",
+            "default": false
+          },
+          "include_raw": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Include Raw",
+            "description": "Include the full SDK message dump on each event."
+          }
+        },
+        "type": "object",
+        "title": "RunOptions",
+        "description": "Per-request overrides. Every field falls back to server config when omitted."
+      },
+      "RunResponse": {
+        "properties": {
+          "session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id",
+            "description": "The SDK's OWN conversation id for this run -- NOT a handle you can put in a `/v1/sessions/{session_id}` path. That path takes `SessionRecord.session_id`, this service's registry handle, which is a different string: feeding this one back is a 404 (measured). The two identifiers have shared a name since Plan 1 and the name is kept as-is because it already ships; `sdk_session_id` below carries the same value under a name that says which id it is, and is what new code should read."
+          },
+          "sdk_session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sdk Session Id",
+            "description": "The same value as `session_id` above, under an unambiguous name. Matches `TurnRecord.sdk_session_id` on `SessionRecord.last_turn`, so one name means one identifier across every surface that reports the SDK's id."
+          },
+          "outcome_recorded": {
+            "type": "boolean",
+            "title": "Outcome Recorded",
+            "description": "False when the run ended without a terminating ResultMessage (agent process crashed or exited early). The events list may still be populated, but result, cost and usage are unavailable — this is not the same as a successful run that produced no output.",
+            "default": true
+          },
+          "result": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result"
+          },
+          "is_error": {
+            "type": "boolean",
+            "title": "Is Error",
+            "description": "The agent reported failure. A successful HTTP call can carry is_error=true.",
+            "default": false
+          },
+          "interrupted": {
+            "type": "boolean",
+            "title": "Interrupted",
+            "description": "True when this turn was stopped by an explicit interrupt request. The SDK reports an interrupted turn with is_error=true and subtype='error_during_execution' -- identical in shape to a real failure -- so this flag is the only reliable way to tell a deliberate stop from a crash.",
+            "default": false
+          },
+          "subtype": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subtype"
+          },
+          "stop_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stop Reason"
+          },
+          "terminal_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Terminal Reason"
+          },
+          "limit_hit": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "turns",
+                  "budget"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Limit Hit",
+            "description": "Which guardrail ended the run, if any. Never 'timeout': a timed-out run raises RunTimeout, which surfaces as a 504 Problem document (/v1/query) or an in-band event: error (/v1/query/stream), not a RunResponse -- so this field would never actually carry that value."
+          },
+          "num_turns": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Num Turns"
+          },
+          "total_cost_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Cost Usd",
+            "description": "Cost in USD, as reported by the SDK's ResultMessage. **Its scope depends on the endpoint**, because the SDK's own value does. On `POST /v1/query` the connection lasts exactly one run, so this is that run's cost. On `POST /v1/sessions/{session_id}/messages` the connection spans the whole session, and the SDK reports a running total for it -- so this is the CUMULATIVE cost of every turn so far, not the cost of the turn just taken, and it grows monotonically across turns (measured; docs/spike-findings.md S6). The value is passed through unmodified in both cases. To price a single turn, difference it against the previous turn's value. `SessionRecord.total_cost_usd` carries the same running total."
+          },
+          "turn_cost_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Turn Cost Usd",
+            "description": "What THIS run cost, in USD -- the question `total_cost_usd` above cannot answer on a session. On `POST /v1/sessions/{session_id}/messages` it is the difference between the SDK's cumulative figure for this turn and the previous turn's, so it is the price of the turn just taken; on `POST /v1/query`, where the connection lasts exactly one run, it equals `total_cost_usd`. Null means nobody can say -- the run produced no ResultMessage, the ResultMessage carried no price, or the turn was ABORTED (`terminal_reason` `aborted_streaming` / `aborted_tools`, which is what an interrupt looks like) and the price did not move. **All three hold on every route that returns this shape**, one-shot included, though only a session turn can actually be interrupted. That last case is NOT 0.0: an interrupted turn measurably runs real inference, and the SDK attributes none of it -- see the warning on `usage` below. 0.0 is reserved for a turn that genuinely cost nothing. `total_cost_usd` is unchanged and still carries the SDK's own value verbatim."
+          },
+          "duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Ms"
+          },
+          "usage": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Usage",
+            "description": "Token counts for THIS run, passed through from the SDK. **Every field is zero and `iterations` is empty whenever the ResultMessage subtype is not `success`** -- including an interrupted turn, which is measured to consume real tokens anyway. Zeros here mean 'the SDK reported nothing', not 'nothing happened'; see `turn_cost_usd`."
+          },
+          "model_usage": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Usage",
+            "description": "Per-model usage. Always a map: the CLI also bills Haiku internally. **On a session turn this is CUMULATIVE for the connection, not per-turn** -- like `total_cost_usd` and unlike `usage` -- so do NOT sum it across turns, and note that it also reports alias and canonical keys for one model (docs/spike-findings.md M1). On an interrupted turn it does not move at all: it still carries the running totals from earlier COMPLETED turns, or omits the model entirely if none has completed yet."
+          },
+          "permission_denials": {
+            "anyOf": [
+              {
+                "items": {},
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Permission Denials"
+          },
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/AgentEvent"
+            },
+            "type": "array",
+            "title": "Events"
+          }
+        },
+        "type": "object",
+        "title": "RunResponse"
+      },
+      "SessionCreate": {
+        "properties": {
+          "options": {
+            "$ref": "#/components/schemas/RunOptions"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "type": "object",
+        "title": "SessionCreate",
+        "description": "Create a session. Options are fixed for the session's lifetime except\nfor model and permission_mode, which PATCH can change."
+      },
+      "SessionList": {
+        "properties": {
+          "sessions": {
+            "items": {
+              "$ref": "#/components/schemas/SessionRecord"
+            },
+            "type": "array",
+            "title": "Sessions"
+          }
+        },
+        "type": "object",
+        "title": "SessionList"
+      },
+      "SessionRecord": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "title": "Session Id"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "idle",
+              "running",
+              "closed"
+            ],
+            "title": "Status"
+          },
+          "created_at": {
+            "type": "number",
+            "title": "Created At"
+          },
+          "last_used_at": {
+            "type": "number",
+            "title": "Last Used At"
+          },
+          "turns": {
+            "type": "integer",
+            "title": "Turns",
+            "description": "Turns that reached a result. A turn that timed out, failed or was abandoned mid-drain is not counted; one whose result was produced but never delivered (the client hung up on the last frame) is."
+          },
+          "total_cost_usd": {
+            "type": "number",
+            "title": "Total Cost Usd",
+            "description": "The SDK's running total for this session's connection, assigned verbatim and never summed (docs/spike-findings.md S6). **It is a floor on what the session cost, not the figure.** An interrupted turn does not move it -- measured: eight consecutive start-then-interrupt turns, each ~8s of streamed inference, advanced it by $0.000649 in total. Do not use it as a spend control; see the `max_budget_usd` warning on `RunOptions`."
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model",
+            "description": "The model this session is CURRENTLY configured with -- resolved at creation from the request or the server default, and updated by a successful PATCH. This is the read-back for PATCH: without it there is no way to confirm a model change took."
+          },
+          "permission_mode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Permission Mode",
+            "description": "The permission mode this session is currently configured with, resolved and updated exactly like `model`. A plain string rather than the `PermissionMode` enum on purpose: the server default is an unconstrained environment setting, and validating it here would turn an operator's config typo into a 500 on the one endpoint whose job is to report what a session looks like. \n\nOnly these two fields are echoed. Every other option is fixed for the session's lifetime, and `system_prompt` in particular carries caller-supplied content plus the server's own workspace layout -- not something to return from a list endpoint."
+          },
+          "last_residue_discarded": {
+            "type": "integer",
+            "title": "Last Residue Discarded",
+            "description": "How many stale messages the LAST turn discarded before it started. Non-zero means a previous turn was abandoned with messages still in flight on the SDK's connection-scoped buffer (spike case S3): they would otherwise have been read as this turn's own -- one caller's turn attributed to another -- so they were dropped. Reset at the top of every turn, so it always describes the most recent one and never a stale count from an older abnormal turn.",
+            "default": 0
+          },
+          "last_turn": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TurnRecord"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What became of the most recent turn. NULL means this session has never taken one -- not that the last turn reported nothing. This is how a caller whose stream dropped asks what happened to the turn it lost: `turns` and `total_cost_usd` do not move for an abandoned turn, so without this a session that lost a turn looks exactly like one that never took any."
+          },
+          "context_usage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ContextUsage"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Populated on the detail endpoint only."
+          }
+        },
+        "type": "object",
+        "required": [
+          "session_id",
+          "status",
+          "created_at",
+          "last_used_at",
+          "turns",
+          "total_cost_usd"
+        ],
+        "title": "SessionRecord"
+      },
+      "SessionUpdate": {
+        "properties": {
+          "model": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model",
+            "description": "An empty string is rejected rather than forwarded (follow-up item 9). Unlike the two permissive behaviours above, forwarding it is not harmless: it issues a real `set_model` control request to the agent with a meaningless argument."
+          },
+          "permission_mode": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "default",
+                  "acceptEdits",
+                  "plan",
+                  "bypassPermissions",
+                  "dontAsk",
+                  "auto"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Permission Mode"
+          }
+        },
+        "type": "object",
+        "title": "SessionUpdate",
+        "description": "Both fields optional; omitted fields are left unchanged.\n\nTwo other permissive behaviours are DELIBERATE and left as they are\n(follow-up item 9): `{\"bogus\": 1}` is accepted, because no model in this\nmodule sets `extra=\"forbid\"`, and `{\"model\": null}` is indistinguishable\nfrom omitting the field, because pydantic gives both the same default --\nso a caller cannot reset a session to the server default. Both are\nproperties of how this whole schema module behaves rather than of this\nmodel, and changing either here alone would make one model inconsistent\nwith every other. Pinned in tests/test_session_schemas.py so they are a\nrecorded decision, not an accident."
+      },
+      "StoredEvent": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id",
+            "description": "Storage sequence. Stable, and usable as a pagination cursor."
+          },
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "seq": {
+            "type": "integer",
+            "title": "Seq",
+            "description": "Position within its own run, as the driver counted it."
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "At"
+          },
+          "type": {
+            "type": "string",
+            "title": "Type"
+          },
+          "subtype": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subtype"
+          },
+          "content": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "run_id",
+          "seq",
+          "at",
+          "type"
+        ],
+        "title": "StoredEvent",
+        "description": "One recorded SDK message."
+      },
+      "StoredRun": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id",
+            "description": "The service-side session id, or null for a one-shot /v1/query run."
+          },
+          "sdk_session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sdk Session Id"
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Started At"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "prompt": {
+            "type": "string",
+            "title": "Prompt"
+          },
+          "result_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result Text"
+          },
+          "result_subtype": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result Subtype"
+          },
+          "stop_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stop Reason"
+          },
+          "terminal_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Terminal Reason"
+          },
+          "limit_hit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Limit Hit"
+          },
+          "num_turns": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Num Turns"
+          },
+          "duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Ms"
+          },
+          "duration_api_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Api Ms"
+          },
+          "cost_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Usd",
+            "description": "What this run cost. `null` means nobody can say -- NEVER 0.0, which would claim the run was free. An interrupted turn is unattributed, not free."
+          },
+          "usage": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Usage"
+          },
+          "model_usage": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Usage"
+          },
+          "permission_denials": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Permission Denials"
+          },
+          "errors": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Errors"
+          },
+          "api_error_status": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Error Status"
+          },
+          "is_error": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Error",
+            "description": "The AGENT reported its task failed. Distinct from a machinery failure."
+          },
+          "interrupted": {
+            "type": "boolean",
+            "title": "Interrupted",
+            "default": false
+          },
+          "timed_out": {
+            "type": "boolean",
+            "title": "Timed Out",
+            "default": false
+          },
+          "outcome_missing": {
+            "type": "boolean",
+            "title": "Outcome Missing",
+            "description": "The run never consumed its own ResultMessage: a crash, an abandoned consumer, or a timeout. A real state, distinct from a clean finish.",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id",
+          "started_at",
+          "prompt"
+        ],
+        "title": "StoredRun",
+        "description": "One recorded run or turn, as stored.\n\nWider than `RunResponse`: it carries `duration_api_ms`, `errors` and\n`api_error_status`, which are diagnostic detail a stored row wants and a\nstreaming caller does not."
+      },
+      "TranscriptPage": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "title": "Session Id"
+          },
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/StoredEvent"
+            },
+            "type": "array",
+            "title": "Events"
+          },
+          "next_after": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next After",
+            "description": "Pass as `after` to fetch the next page. `null` means this is the last page -- NOT that the session has ended, which is `status` on the record."
+          }
+        },
+        "type": "object",
+        "required": [
+          "session_id",
+          "events"
+        ],
+        "title": "TranscriptPage",
+        "description": "One page of a session's transcript, oldest first."
+      },
+      "TurnRecord": {
+        "properties": {
+          "sdk_session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sdk Session Id",
+            "description": "The SDK's OWN conversation id for this turn -- what the CLI reports on its init and result messages. Named `sdk_session_id`, never a bare `session_id`, because that name already denotes the registry handle on `SessionRecord`: the two are different identifiers and `POST /v1/sessions/{this value}/messages` is a 404 (measured; docs/plan-02-followups.md item 7)."
+          },
+          "outcome_recorded": {
+            "type": "boolean",
+            "title": "Outcome Recorded",
+            "description": "False when the turn ended without a terminating ResultMessage -- abandoned mid-drain (the usual result of a dropped SSE connection), timed out, or the agent process died. Everything below except `interrupted` and `timed_out` is then null or false because the SDK never reported it, not because it was measured to be so.",
+            "default": false
+          },
+          "interrupted": {
+            "type": "boolean",
+            "title": "Interrupted",
+            "description": "This turn was stopped by an explicit interrupt request. The SDK reports an interrupted turn identically to a crash (is_error=true, subtype='error_during_execution'), so this flag is the only way to tell them apart.",
+            "default": false
+          },
+          "timed_out": {
+            "type": "boolean",
+            "title": "Timed Out",
+            "description": "This turn exceeded its time budget and was force-ended. Present HERE but deliberately absent from `RunResponse`: a turn that times out on the wire is a 504 and the status code says so, but on a record fetched afterwards the status code is long gone -- possibly to a different caller entirely -- and a timeout is otherwise indistinguishable from any other `outcome_recorded: false` ending.",
+            "default": false
+          },
+          "is_error": {
+            "type": "boolean",
+            "title": "Is Error",
+            "description": "The agent reported failure. See `interrupted`.",
+            "default": false
+          },
+          "subtype": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subtype"
+          },
+          "stop_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stop Reason"
+          },
+          "terminal_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Terminal Reason"
+          },
+          "limit_hit": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "turns",
+                  "budget"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Limit Hit"
+          },
+          "num_turns": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Num Turns"
+          },
+          "duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Ms"
+          },
+          "turn_cost_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Turn Cost Usd",
+            "description": "What this turn cost, in USD: the SDK's cumulative figure for it minus the previous turn's. Null means nobody can say (no ResultMessage, one carrying no price, or an ABORTED turn whose cumulative did not move), which is not 0.0. See `RunResponse.turn_cost_usd`."
+          }
+        },
+        "type": "object",
+        "title": "TurnRecord",
+        "description": "What became of a session's most recent turn.\n\nA NESTED model rather than flat `last_turn_*` fields on `SessionRecord`,\nfor one reason that decides it: a session that has never taken a turn must\nbe able to say so unambiguously. Nested, that is `last_turn: null`. Flat,\nthe only available answer is every field being falsy at once -- and\n`last_turn_interrupted: false` is a claim about a turn that does not\nexist, indistinguishable from a real turn nobody interrupted.\n\nDeliberately NOT a `RunResponse`. This is a record fetched later, so it\ncarries no `events` (already streamed, and unbounded) and no `result`\ntext: \"what became of the turn\" is answered by the flags below, while the\noutput belongs to whoever took the turn. `GET /v1/sessions` returns a list\nof these records, and the model's prose output is not something to hand\nout by the pageful to anyone enumerating sessions."
+      },
+      "TurnRequest": {
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Prompt",
+            "examples": [
+              "What did we just look at?"
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "prompt"
+        ],
+        "title": "TurnRequest"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  }
+}
